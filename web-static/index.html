@@ -74,6 +74,9 @@
         <p><b>2013-12-13: This is a message to miners on my node telling them something really cool.</b></p>
       </div>
       <div class="alert alert-info">
+	<b>2017-09-10</b>: Due to a few bugs, adaptive difficulty policy was not actually enabled. Once I got it working, the reporting was terrible. I'm still trying to get the reporting to be more accurate.
+      </div>
+      <div class="alert alert-info">
 	<b>2017-09-05</b>: Adaptive difficulty policy has been enabled! This gives each worker it's own difficulty rather than using the pool difficulty. This should result in lower stale shares and hopefully better efficiencies, but there is no guarantee. 
       </div>
       <div class="alert alert-info">
@@ -279,9 +282,10 @@
         }
 
         address_span= $('<span/>').addClass('coin_address').text(address);
+	real_address = address.split('.');
         link_icon= $('<i/>').addClass('fa fa-external-link fa-fw');
         blockinfo= $('<a/>')
-          .attr('href', currency_info.address_explorer_url_prefix + address)
+          .attr('href', currency_info.address_explorer_url_prefix + real_address[0])
           .attr('target', '_blank').append(link_icon);
 
         doa= local_stats.miner_dead_hash_rates[address] || 0;

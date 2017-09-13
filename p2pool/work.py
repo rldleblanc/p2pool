@@ -219,6 +219,8 @@ class WorkerBridge(worker_interface.WorkerBridge):
             if user_rate is not None:
                 if user_rate:
                     desired_pseudoshare_target = int(20 * (2**256 // user_rate // (10*60))) # min 100 pseudoshares per 10 minutes
+                    #desired_pseudoshare_target = int(200 * (2**256 // user_rate // (10*60))) # min 100 pseudoshares per 10 minutes
+                    #desired_pseudoshare_target = bitcoin_data.difficulty_to_target(user_rate * .00000116)
 # ======
 
         if self.args.address == 'dynamic':
@@ -233,7 +235,9 @@ class WorkerBridge(worker_interface.WorkerBridge):
             pubkey_hash = self.my_pubkey_hash
         else:
             try:
-                pubkey_hash = bitcoin_data.address_to_pubkey_hash(user, self.node.net.PARENT)
+                sub_names = user.split('.', 1)
+                tmp_user = sub_names[0]
+                pubkey_hash = bitcoin_data.address_to_pubkey_hash(tmp_user, self.node.net.PARENT)
             except: # XXX blah
                 if self.args.address != 'dynamic':
                     pubkey_hash = self.my_pubkey_hash
