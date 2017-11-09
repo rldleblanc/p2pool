@@ -219,8 +219,6 @@ class WorkerBridge(worker_interface.WorkerBridge):
             if user_rate is not None:
                 if user_rate:
                     desired_pseudoshare_target = int(20 * (2**256 // user_rate // (10*60))) # min 100 pseudoshares per 10 minutes
-                    #desired_pseudoshare_target = int(200 * (2**256 // user_rate // (10*60))) # min 100 pseudoshares per 10 minutes
-                    #desired_pseudoshare_target = bitcoin_data.difficulty_to_target(user_rate * .00000116)
 # ======
 
         if self.args.address == 'dynamic':
