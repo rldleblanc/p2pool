@@ -108,12 +108,19 @@
           <td width='30%' class='text-right'><span id='share_difficulty'></span></td>
         </tr>
         <tr>
-          <td width='20%'>Current block value:</td>
-          <td width='30%' class='text-right'><span id='block_value'></span></td>
-          <td width='20%'>Expected time to share (block):</td>
+          <td width='20%'>Network hash rate (difficulty):</td>
+          <td width='30%' class='text-right'><span id='network_rate'></span></td>
+          <td width='20%'>Expected time to share:</td>
           <td width='30%' class='text-right'>
             <span id='expected_time_to_share'></span>
-            (<span id='expected_time_to_block'></span>)
+          </td>
+        </tr>
+        <tr>
+          <td width='20%'>Current block value:</td>
+          <td width='30%' class='text-right'><span id='block_value'></span></td>
+          <td width='20%'>Expected time to block:</td>
+          <td width='30%' class='text-right'>
+            <span id='expected_time_to_block'></span>
           </td>
         </tr>
         <tr>
@@ -335,6 +342,8 @@
       pool_nonstale_hash_rate=
         parseInt(global_stats.pool_nonstale_hash_rate || 0);
       global_doa_rate= pool_hash_rate - pool_nonstale_hash_rate;
+      network_hash_rate =
+	parseInt(global_stats.network_hashrate || 0);
 
       global_rate= formatHashrate(pool_hash_rate)
         + ' (stale '
@@ -345,6 +354,10 @@
 
       $('#share_difficulty')
         .text(parseFloat(global_stats.min_difficulty).toFixed(6));
+
+      network_rate = formatHashrate(network_hash_rate);
+      network_difficulty = formatNum(global_stats.network_block_difficulty, 3, '');
+      $('#network_rate').text(network_rate + ' (' + network_difficulty + ')');
 
       $('#block_value')
         .text(parseFloat(local_stats.block_value).toFixed(8))

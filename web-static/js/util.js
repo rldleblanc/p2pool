@@ -4,13 +4,17 @@
 // ======================================================================
 
 var formatHashrate= function(rate) {
-  rate= parseFloat(rate); unit= 'H/s';
-  if(rate >= 1000) { rate /= 1000; unit= 'KH/s'; }
-  if(rate >= 1000) { rate /= 1000; unit= 'MH/s'; }
-  if(rate >= 1000) { rate /= 1000; unit= 'GH/s'; }
-  if(rate >= 1000) { rate /= 1000; unit= 'TH/s'; }
-  if(rate >= 1000) { rate /= 1000; unit= 'PH/s'; }
-  return (rate.toFixed(2) + ' ' + unit);
+  return formatNum(rate, 2, 'H/s');
+}
+
+var formatNum = function(rate, places, unit_suffix) {
+  rate= parseFloat(rate); unit= '';
+  if(rate >= 1000) { rate /= 1000; unit= 'K'; }
+  if(rate >= 1000) { rate /= 1000; unit= 'M'; }
+  if(rate >= 1000) { rate /= 1000; unit= 'G'; }
+  if(rate >= 1000) { rate /= 1000; unit= 'T'; }
+  if(rate >= 1000) { rate /= 1000; unit= 'P'; }
+  return (rate.toFixed(places) + ' ' + unit + unit_suffix);
 }
 
 // ======================================================================
