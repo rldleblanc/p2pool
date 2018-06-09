@@ -10,6 +10,8 @@ from p2pool.util import pack
 P2P_PREFIX = 'fdd2c8f1'.decode('hex')
 P2P_PORT = 19335
 ADDRESS_VERSION = 111
+SEGWIT_ADDRESS_VERSION = 58
+HUMAN_READABLE_PART = 'tltc'
 RPC_PORT = 19332
 RPC_CHECK = defer.inlineCallbacks(lambda bitcoind: defer.returnValue(
             'getreceivedbyaddress' in (yield bitcoind.rpc_help()) and
@@ -23,6 +25,6 @@ CONF_FILE_FUNC = lambda: os.path.join(os.path.join(os.environ['APPDATA'], 'Litec
 BLOCK_EXPLORER_URL_PREFIX = 'https://chain.so/block/LTCTEST/'
 ADDRESS_EXPLORER_URL_PREFIX = 'https://chain.so/address/LTCTEST/'
 TX_EXPLORER_URL_PREFIX = 'https://chain.so/tx/LTCTEST/'
-SANE_TARGET_RANGE = (2**256//1000000000000000 - 1, 2**256 - 1)
+SANE_TARGET_RANGE = (1<<128-1, 1<<240-1)
 DUMB_SCRYPT_DIFF = 2**16
 DUST_THRESHOLD = 1e8

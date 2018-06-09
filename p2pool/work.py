@@ -20,7 +20,7 @@ print_throttle = 0.0
 class WorkerBridge(worker_interface.WorkerBridge):
     COINBASE_NONCE_LENGTH = 8
     
-    def __init__(self, node, my_pubkey_hash, donation_percentage, merged_urls, worker_fee, args, pubkeys, bitcoind):
+    def __init__(self, node, my_pubkey_hash, my_pubkey_hash_version, donation_percentage, merged_urls, worker_fee, args, pubkeys, bitcoind):
         worker_interface.WorkerBridge.__init__(self)
         self.recent_shares_ts_work = []
         
@@ -30,6 +30,7 @@ class WorkerBridge(worker_interface.WorkerBridge):
         self.pubkeys = pubkeys
         self.args = args
         self.my_pubkey_hash = my_pubkey_hash
+        self.my_pubkey_hash_version = my_pubkey_hash_version
 
         self.donation_percentage = args.donation_percentage
         self.worker_fee = args.worker_fee
@@ -155,9 +156,9 @@ class WorkerBridge(worker_interface.WorkerBridge):
         self.address_throttle=time.time()
         print "ATTEMPTING TO FRESHEN ADDRESS."
         self.address = yield deferral.retry('Error getting a dynamic address from bitcoind:', 5)(lambda: self.bitcoind.rpc_getnewaddress('p2pool'))()
-        new_pubkey = bitcoin_data.address_to_pubkey_hash(self.address, self.net)
+        new_pubkey, new_pubkey_version = bitcoin_data.address_to_pubkey_hash(self.address, self.net)
         self.pubkeys.popleft()
-        self.pubkeys.addkey(new_pubkey)
+        self.pubkeys.addkey({ 'hash': new_pubkey, 'version': new_pubkey_version })
         print " Updated payout pool:"
         for i in range(len(self.pubkeys.keys)):
             print '    ...payout %d: %s(%f)' % (i, bitcoin_data.pubkey_hash_to_address(self.pubkeys.keys[i], self.net),self.pubkeys.keyweights[i],)
@@ -187,7 +188,8 @@ class WorkerBridge(worker_interface.WorkerBridge):
                         log.err()
         if self.args.address == 'dynamic':
             i = self.pubkeys.weighted()
-            pubkey_hash = self.pubkeys.keys[i]
+            pubkey_hash = self.pubkeys.keys[i]['hash']
+            pubkey_hash_version = self.pubkeys.keys[i]['version']
 
             c = time.time()
             if (c - self.pubkeys.stamp) > self.args.timeaddresses:
@@ -195,22 +197,23 @@ class WorkerBridge(worker_interface.WorkerBridge):
 
         if random.uniform(0, 100) < self.worker_fee:
             pubkey_hash = self.my_pubkey_hash
+            pubkey_hash_version = self.my_pubkey_hash_version
         else:
             try:
-                pubkey_hash = bitcoin_data.address_to_pubkey_hash(user, self.node.net.PARENT)
-            except: # XXX blah
+                pubkey_hash, pubkey_hash_version = bitcoin_data.address_to_pubkey_hash(user, self.node.net.PARENT)
+            except Exception: # XXX blah
                 if self.args.address != 'dynamic':
                     pubkey_hash = self.my_pubkey_hash
-        
-        return user, pubkey_hash, desired_share_target, desired_pseudoshare_target
+                    pubkey_hash_version = self.my_pubkey_hash_version
+        return user, pubkey_hash, pubkey_hash_version, desired_share_target, desired_pseudoshare_target
     
     def preprocess_request(self, user):
         if (self.node.p2p_node is None or len(self.node.p2p_node.peers) == 0) and self.node.net.PERSIST:
             raise jsonrpc.Error_for_code(-12345)(u'p2pool is not connected to any peers')
         if time.time() > self.current_work.value['last_update'] + 60:
             raise jsonrpc.Error_for_code(-12345)(u'lost contact with bitcoind')
-        user, pubkey_hash, desired_share_target, desired_pseudoshare_target = self.get_user_details(user)
-        return pubkey_hash, desired_share_target, desired_pseudoshare_target
+        user, pubkey_hash, pubkey_hash_version, desired_share_target, desired_pseudoshare_target = self.get_user_details(user)
+        return user, pubkey_hash, pubkey_hash_version, desired_share_target, desired_pseudoshare_target
     
     def _estimate_local_hash_rate(self):
         if len(self.recent_shares_ts_work) == 50:
@@ -236,7 +239,7 @@ class WorkerBridge(worker_interface.WorkerBridge):
             addr_hash_rates[datum['pubkey_hash']] = addr_hash_rates.get(datum['pubkey_hash'], 0) + datum['work']/dt
         return addr_hash_rates
  
-    def get_work(self, pubkey_hash, desired_share_target, desired_pseudoshare_target, worker_ip=None):
+    def get_work(self, user, pubkey_hash, pubkey_hash_version, desired_share_target, desired_pseudoshare_target, worker_ip=None):
         global print_throttle
         t0 = time.time()
         if (self.node.p2p_node is None or len(self.node.p2p_node.peers) == 0) and self.node.net.PERSIST:
@@ -320,6 +323,7 @@ class WorkerBridge(worker_interface.WorkerBridge):
                     ]) + self.current_work.value['coinbaseflags'])[:100],
                     nonce=random.randrange(2**32),
                     pubkey_hash=pubkey_hash,
+                    pubkey_hash_version=pubkey_hash_version,
                     subsidy=self.current_work.value['subsidy'],
                     donation=math.perfect_round(65535*self.donation_percentage/100),
                     stale_info=(lambda (orphans, doas), total, (orphans_recorded_in_chain, doas_recorded_in_chain):
@@ -384,7 +388,7 @@ class WorkerBridge(worker_interface.WorkerBridge):
                 print_throttle = time.time()
 
         #need this for stats
-        self.last_work_shares.value[bitcoin_data.pubkey_hash_to_address(pubkey_hash, self.node.net.PARENT)]=share_info['bits']
+        self.last_work_shares.value[bitcoin_data.pubkey_hash_to_address(pubkey_hash, self.node.net.PARENT, pubkey_hash_version)]=share_info['bits']
         
         ba = dict(
             version=max(self.current_work.value['version'], 0x20000000),
@@ -421,7 +425,7 @@ class WorkerBridge(worker_interface.WorkerBridge):
             except:
                 log.err(None, 'Error while processing potential block:')
             
-            user, _, _, _ = self.get_user_details(user)
+            user, _, _, _, _ = self.get_user_details(user)
             assert header['previous_block'] == ba['previous_block']
             assert header['merkle_root'] == bitcoin_data.check_merkle_link(bitcoin_data.hash256(new_packed_gentx), merkle_link)
             assert header['bits'] == ba['bits']
