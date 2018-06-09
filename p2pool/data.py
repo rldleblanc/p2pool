@@ -105,6 +105,7 @@ class BaseShare(object):
                 ('coinbase', pack.VarStrType()),
                 ('nonce', pack.IntType(32)),
                 ('pubkey_hash', pack.IntType(160)),
+                ] + ([('pubkey_hash_version', pack.IntType(8))] if cls.VERSION >= 34 else []) + [
                 ('subsidy', pack.IntType(64)),
                 ('donation', pack.IntType(16)),
                 ('stale_info', pack.EnumType(pack.IntType(8), dict((k, {0: None, 253: 'orphan', 254: 'doa'}.get(k, 'unk%i' % (k,))) for k in xrange(256)))),
@@ -244,7 +245,7 @@ class BaseShare(object):
         assert total_weight == sum(weights.itervalues()) + donation_weight, (total_weight, sum(weights.itervalues()) + donation_weight)
         
         amounts = dict((script, share_data['subsidy']*(199*weight)//(200*total_weight)) for script, weight in weights.iteritems()) # 99.5% goes according to weights prior to this share
-        this_script = bitcoin_data.pubkey_hash_to_script2(share_data['pubkey_hash'])
+        this_script = bitcoin_data.pubkey_hash_to_script2(share_data['pubkey_hash'], share_data['pubkey_hash_version'] if cls.VERSION >= 34 else net.PARENT.ADDRESS_VERSION, net.PARENT)
         amounts[this_script] = amounts.get(this_script, 0) + share_data['subsidy']//200 # 0.5% goes to block finder
         amounts[DONATION_SCRIPT] = amounts.get(DONATION_SCRIPT, 0) + share_data['subsidy'] - sum(amounts.itervalues()) # all that's left over is the donation weight and some extra satoshis due to rounding
         
@@ -384,7 +385,7 @@ class BaseShare(object):
         self.target = self.share_info['bits'].target
         self.timestamp = self.share_info['timestamp']
         self.previous_hash = self.share_data['previous_share_hash']
-        self.new_script = bitcoin_data.pubkey_hash_to_script2(self.share_data['pubkey_hash'])
+        self.new_script = bitcoin_data.pubkey_hash_to_script2(self.share_data['pubkey_hash'], self.share_data['pubkey_hash_version'] if self.VERSION >= 34 else net.PARENT.ADDRESS_VERSION, net.PARENT)
         self.desired_version = self.share_data['desired_version']
         self.absheight = self.share_info['absheight']
         self.abswork = self.share_info['abswork']
@@ -555,10 +556,15 @@ class BaseShare(object):
             return None # not all txs present
         return dict(header=self.header, txs=[self.check(tracker, other_txs)] + other_txs)
 
+class SegwitMiningShare(BaseShare):
+    VERSION = 34
+    VOTING_VERSION = 34
+    SUCCESSOR = None
+
 class NewShare(BaseShare):
     VERSION = 33
     VOTING_VERSION = 33
-    SUCCESSOR = None
+    SUCCESSOR = SegwitMiningShare
 
 class PreSegwitShare(BaseShare):
     VERSION = 32
@@ -571,7 +577,7 @@ class Share(BaseShare):
     SUCCESSOR = NewShare
 
 
-share_versions = {s.VERSION:s for s in [NewShare, PreSegwitShare, Share]}
+share_versions = {s.VERSION:s for s in [SegwitMiningShare, NewShare, PreSegwitShare, Share]}
 
 class WeightsSkipList(forest.TrackerSkipList):
     # share_count, weights, total_weight

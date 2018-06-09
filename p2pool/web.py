@@ -223,8 +223,8 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         ])
     ))))
     web_root.putChild('peer_versions', WebInterface(lambda: dict(('%s:%i' % peer.addr, peer.other_sub_version) for peer in node.p2p_node.peers.itervalues())))
-    web_root.putChild('payout_addr', WebInterface(lambda: bitcoin_data.pubkey_hash_to_address(wb.my_pubkey_hash, node.net.PARENT)))
-    web_root.putChild('payout_addrs', WebInterface(lambda: list(('%s' % bitcoin_data.pubkey_hash_to_address(add, node.net.PARENT)) for add in wb.pubkeys.keys)))
+    web_root.putChild('payout_addr', WebInterface(lambda: bitcoin_data.pubkey_hash_to_address(wb.my_pubkey_hash, node.net.PARENT, wb.my_pubkey_hash_version)))
+    web_root.putChild('payout_addrs', WebInterface(lambda: list(('%s' % bitcoin_data.pubkey_hash_to_address(add['hash'], node.net.PARENT, add['version'])) for add in wb.pubkeys.keys)))
     web_root.putChild('recent_blocks', WebInterface(lambda: [dict(
         ts=s.timestamp,
         hash='%064x' % s.header_hash,
@@ -258,7 +258,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         
         my_current_payout=0.0
         for add in wb.pubkeys.keys:
-            my_current_payout+=node.get_current_txouts().get(bitcoin_data.pubkey_hash_to_script2(add), 0)*1e-8
+            my_current_payout+=node.get_current_txouts().get(bitcoin_data.pubkey_hash_to_script2(add['hash'], add['version'], node.net.PARENT), 0)*1e-8
         stat_log.append(dict(
             time=time.time(),
             pool_hash_rate=p2pool_data.get_pool_attempts_per_second(node.tracker, node.best_share_var.value, lookbehind)/(1-global_stale_prop),
@@ -442,7 +442,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         current_txouts = node.get_current_txouts()
         my_current_payouts = 0.0
         for add in wb.pubkeys.keys:
-             my_current_payouts += current_txouts.get(bitcoin_data.pubkey_hash_to_script2(add), 0)*1e-8
+             my_current_payouts += current_txouts.get(bitcoin_data.pubkey_hash_to_script2(add['hash'], add['version'], node.net.PARENT), 0)*1e-8
         hd.datastreams['current_payout'].add_datum(t, my_current_payouts)
         miner_hash_rates, miner_dead_hash_rates = wb.get_local_rates()
         current_txouts_by_address = dict((bitcoin_data.script2_to_address(script, node.net.PARENT), amount) for script, amount in current_txouts.iteritems())

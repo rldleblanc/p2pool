@@ -5,7 +5,7 @@ import random
 import warnings
 
 import p2pool
-from p2pool.util import math, pack
+from p2pool.util import math, pack, segwit_addr
 
 def hash256(data):
     return pack.IntType(256).unpack(hashlib.sha256(hashlib.sha256(data).digest()).digest())
@@ -317,17 +317,31 @@ human_address_type = ChecksummedType(pack.ComposedType([
     ('pubkey_hash', pack.IntType(160)),
 ]))
 
-def pubkey_hash_to_address(pubkey_hash, net):
-    return base58_encode(human_address_type.pack(dict(version=net.ADDRESS_VERSION, pubkey_hash=pubkey_hash)))
+def pubkey_hash_to_address(pubkey_hash, net, version=None):
+    if version == None:
+        version = net.ADDRESS_VERSION
+
+    if version == 0:
+        return segwit_addr.encode(net.HUMAN_READABLE_PART, 0, [int(x) for x in bytearray.fromhex(hex(pubkey_hash)[2:-1])])
+    return base58_encode(human_address_type.pack(dict(version=version, pubkey_hash=pubkey_hash)))
 
 def pubkey_to_address(pubkey, net):
     return pubkey_hash_to_address(hash160(pubkey), net)
 
 def address_to_pubkey_hash(address, net):
-    x = human_address_type.unpack(base58_decode(address))
-    if x['version'] != net.ADDRESS_VERSION:
-        raise ValueError('address not for this net!')
-    return x['pubkey_hash']
+    try:
+        base_decode = base58_decode(address)
+        x = human_address_type.unpack(base_decode)
+        if x['version'] != net.ADDRESS_VERSION and x['version'] != net.SEGWIT_ADDRESS_VERSION:
+            raise ValueError('address not for this net!')
+        return x['pubkey_hash'], x['version']
+    except Exception, e:
+        try:
+            hrp, pubkey_hash = segwit_addr.bech32_decode(address)
+            witver, witprog = segwit_addr.decode(net.HUMAN_READABLE_PART, address)
+            return int(''.join('{:02x}'.format(x) for x in witprog), 16), 0
+        except Exception, e:
+            raise ValueError('invalid addr')
 
 # transactions
 
@@ -351,7 +365,12 @@ def pubkey_to_script2(pubkey):
     assert len(pubkey) <= 75
     return (chr(len(pubkey)) + pubkey) + '\xac'
 
-def pubkey_hash_to_script2(pubkey_hash):
+def pubkey_hash_to_script2(pubkey_hash, version, net):
+    if version == 0:
+        hx = hex(pubkey_hash)[2:-1]
+        return '\x00\x14' + hex(pubkey_hash)[2:-1].decode("hex")
+    if version == net.SEGWIT_ADDRESS_VERSION:
+        return ('\xa9\x14' + pack.IntType(160).pack(pubkey_hash)) + '\x87'
     return '\x76\xa9' + ('\x14' + pack.IntType(160).pack(pubkey_hash)) + '\x88\xac'
 
 def script2_to_address(script2, net):
@@ -366,12 +385,30 @@ def script2_to_address(script2, net):
     
     try:
         pubkey_hash = pack.IntType(160).unpack(script2[3:-2])
-        script2_test2 = pubkey_hash_to_script2(pubkey_hash)
+        script2_test2 = pubkey_hash_to_script2(pubkey_hash, net.ADDRESS_VERSION, net)
     except:
         pass
     else:
         if script2_test2 == script2:
             return pubkey_hash_to_address(pubkey_hash, net)
+
+    try:
+        pubkey_hash = int(script2[2:].encode('hex'), 16)
+        script2_test3 = pubkey_hash_to_script2(pubkey_hash, 0, net)
+    except:
+        pass
+    else:
+        if script2_test3 == script2:
+            return pubkey_hash_to_address(pubkey_hash, net, 0)
+
+    try:
+        pubkey_hash = pack.IntType(160).unpack(script2[2:-1])
+        script2_test4 = pubkey_hash_to_script2(pubkey_hash, net.SEGWIT_ADDRESS_VERSION, net)
+    except:
+        pass
+    else:
+        if script2_test4 == script2:
+            return pubkey_hash_to_address(pubkey_hash, net, net.SEGWIT_ADDRESS_VERSION)
 
 def script2_to_human(script2, net):
     try:
@@ -393,3 +430,6 @@ def script2_to_human(script2, net):
             return 'Address. Address: %s' % (pubkey_hash_to_address(pubkey_hash, net),)
     
     return 'Unknown. Script: %s'  % (script2.encode('hex'),)
+
+def is_segwit_script(script):
+    return script.startswith('\x00\x14') or script.startswith('\xa9\x14')
