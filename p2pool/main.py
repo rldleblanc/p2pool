@@ -629,7 +629,8 @@ def run():
         args.logfile = os.path.join(datadir_path, 'log')
     
     logfile = logging.LogFile(args.logfile)
-    pipe = logging.TimestampingPipe(logging.TeePipe([logging.EncodeReplacerPipe(sys.stderr), logfile]))
+    #pipe = logging.TimestampingPipe(logging.TeePipe([logging.EncodeReplacerPipe(sys.stderr), logfile]))
+    pipe = logging.TeePipe([logging.EncodeReplacerPipe(sys.stderr), logfile])
     sys.stdout = logging.AbortPipe(pipe)
     sys.stderr = log.DefaultObserver.stderr = logging.AbortPipe(logging.PrefixPipe(pipe, '> '))
     if hasattr(signal, "SIGUSR1"):

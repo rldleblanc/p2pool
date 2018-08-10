@@ -41,6 +41,9 @@
       #myModal .modal-dialog {
         width: 70%;/* your width */
       }
+      .coin_address {
+	font-family: 'Lucida Console', Monaco, monospace;
+      }
     </style>
 
     <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
@@ -74,7 +77,7 @@
         <p><b>2013-12-13: This is a message to miners on my node telling them something really cool.</b></p>
       </div>
       <div class="alert alert-info">
-	<b>2 Nov 2017</b>: Upgraded to new hardware, lower latency connection and IPv6 support.<br>
+	<b>9 Apr 2018</b>: Upgraded Feathercoin to v0.13.1.<br>
 	<b>5 Sep 2017</b>: Adaptive difficulty policy has been enabled! This gives each worker it's own difficulty rather than using the pool difficulty. This should result in lower stale shares and hopefully better efficiencies, but there is no guarantee. 
       </div>
       <div class="alert alert-info">
@@ -178,7 +181,7 @@
           <th>Date/Time</th>
           <th>Number</th>
           <th>Hash</th>
-          <th>Confirmations</th>
+          <!--<th>Confirmations</th>-->
         </tr>
       </table>
     </div> <!-- /container -->
@@ -277,7 +280,11 @@
 
     $(document).on('update_miners', function(e, eventInfo) {
       local_hashrate= 0; local_doa_hashrate= 0;
-      $.each(local_stats.miner_hash_rates, function(address, hashrate) {
+      var addrs = Object.keys(local_stats.miner_hash_rates)
+		  .sort((a, b) => a.localeCompare(
+				    b, undefined, {sensitivity: 'base'}));
+      $.each(addrs, function(idx, address) {
+	hashrate = local_stats.miner_hash_rates[address];
         tr= $('<tr/>').attr('id', address);
 
         // highlight our miner if configured
@@ -431,10 +438,12 @@
 
         tr= $('<tr/>').attr('id', num);
         tr.append($('<td/>')
+	  .append($.format.toBrowserTimeZone(new Date(ts * 1000)))
+	  .append(' &mdash; ')
           .append($.format.prettyDate(new Date(ts * 1000))));
         tr.append($('<td/>').append(num));
         tr.append($('<td/>').append(blockinfo));
-        tr.append($('<td/>').html('&dash;'));
+        //tr.append($('<td/>').html('&dash;'));
         $('#'+num).remove(); $('#recent_blocks').append(tr);
       });
     });

@@ -218,7 +218,7 @@ class WorkerBridge(worker_interface.WorkerBridge):
             desired_pseudoshare_target = None
             if user_rate is not None:
                 if user_rate:
-                    desired_pseudoshare_target = int(20 * (2**256 // user_rate // (10*60))) # min 100 pseudoshares per 10 minutes
+                    desired_pseudoshare_target = int(2**256 // user_rate) # min 100 pseudoshares per 10 minutes
 # ======
 
         if self.args.address == 'dynamic':
