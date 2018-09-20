@@ -569,12 +569,12 @@ class NewShare(BaseShare):
 class PreSegwitShare(BaseShare):
     VERSION = 32
     VOTING_VERSION = 32
-    SUCCESSOR = NewShare
+    SUCCESSOR = SegwitMiningShare
 
 class Share(BaseShare):
     VERSION = 17
     VOTING_VERSION = 17
-    SUCCESSOR = NewShare
+    SUCCESSOR = SegwitMiningShare
 
 
 share_versions = {s.VERSION:s for s in [SegwitMiningShare, NewShare, PreSegwitShare, Share]}

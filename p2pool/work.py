@@ -312,6 +312,7 @@ class WorkerBridge(worker_interface.WorkerBridge):
                         bitcoin_data.average_attempts_to_target((bitcoin_data.target_to_average_attempts(self.node.bitcoind_work.value['bits'].target)*self.node.net.SPREAD)*self.node.net.PARENT.DUST_THRESHOLD/block_subsidy)
                     )
         
+        print("Share version: %s, desired_version: %s" % (share_type.VERSION, (share_type.SUCCESSOR if share_type.SUCCESSOR is not None else share_type).VOTING_VERSION))
         if True:
             share_info, gentx, other_transaction_hashes, get_share = share_type.generate_transaction(
                 tracker=self.node.tracker,
