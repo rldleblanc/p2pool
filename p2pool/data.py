@@ -855,7 +855,7 @@ def get_warnings(tracker, best_share, net, bitcoind_getinfo, bitcoind_work_value
     majority_desired_version = max(desired_version_counts, key=lambda k: desired_version_counts[k])
     if majority_desired_version not in share_versions and desired_version_counts[majority_desired_version] > sum(desired_version_counts.itervalues())/2:
         res.append('A MAJORITY OF SHARES CONTAIN A VOTE FOR AN UNSUPPORTED SHARE IMPLEMENTATION! (v%i with %i%% support)\n'
-            'An upgrade is likely necessary. Check http://p2pool.forre.st/ for more information.' % (
+            'An upgrade is likely necessary. Check https://github.com/jtoomim/p2pool/tree/1mb_segwit or https://forum.bitcoin.com/pools/p2pool-decentralized-dos-resistant-trustless-censorship-resistant-pool-t69932-99999.html for more information.' % (
                 majority_desired_version, 100*desired_version_counts[majority_desired_version]/sum(desired_version_counts.itervalues())))
     
     if bitcoind_getinfo['warnings'] != '':
