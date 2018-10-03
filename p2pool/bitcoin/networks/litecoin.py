@@ -10,7 +10,7 @@ from p2pool.util import pack
 P2P_PREFIX = 'fbc0b6db'.decode('hex')
 P2P_PORT = 9333
 ADDRESS_VERSION = 48
-SEGWIT_ADDRESS_VERSION = 50
+ADDRESS_P2SH_VERSION = 50
 HUMAN_READABLE_PART = 'ltc'
 RPC_PORT = 9332
 RPC_CHECK = defer.inlineCallbacks(lambda bitcoind: defer.returnValue(

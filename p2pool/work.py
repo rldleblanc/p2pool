@@ -157,9 +157,11 @@ class WorkerBridge(worker_interface.WorkerBridge):
         self.address_throttle=time.time()
         print "ATTEMPTING TO FRESHEN ADDRESS."
         self.address = yield deferral.retry('Error getting a dynamic address from bitcoind:', 5)(lambda: self.bitcoind.rpc_getnewaddress('p2pool'))()
-        new_pubkey, new_pubkey_version = bitcoin_data.address_to_pubkey_hash(self.address, self.net)
+        new_pubkey, new_pubkey_version, new_bech32_version = \
+                bitcoin_data.address_to_pubkey_hash(self.address, self.net)
         self.pubkeys.popleft()
-        self.pubkeys.addkey({ 'hash': new_pubkey, 'version': new_pubkey_version })
+        self.pubkeys.addkey({ 'hash': new_pubkey, 'version': new_pubkey_version,
+                              'bech32_version': new_bech32_version})
         print " Updated payout pool:"
         for i in range(len(self.pubkeys.keys)):
             print '    ...payout %d: %s(%f)' % (i, bitcoin_data.pubkey_hash_to_address(self.pubkeys.keys[i], self.net),self.pubkeys.keyweights[i],)
@@ -191,6 +193,7 @@ class WorkerBridge(worker_interface.WorkerBridge):
             i = self.pubkeys.weighted()
             pubkey_hash = self.pubkeys.keys[i]['hash']
             pubkey_hash_version = self.pubkeys.keys[i]['version']
+            bech32_version =self.pubkeys.keys[i]['bech32_version']
 
             c = time.time()
             if (c - self.pubkeys.stamp) > self.args.timeaddresses:
@@ -199,22 +202,25 @@ class WorkerBridge(worker_interface.WorkerBridge):
         if random.uniform(0, 100) < self.worker_fee:
             pubkey_hash = self.my_pubkey_hash
             pubkey_hash_version = self.my_pubkey_hash_version
+            bech32_version = self.bech32_version
         else:
             try:
-                pubkey_hash, pubkey_hash_version = bitcoin_data.address_to_pubkey_hash(user, self.node.net.PARENT)
+                pubkey_hash, pubkey_hash_version, bech32_version = \
+                        bitcoin_data.address_to_pubkey_hash(user, self.node.net.PARENT)
             except Exception: # XXX blah
                 if self.args.address != 'dynamic':
                     pubkey_hash = self.my_pubkey_hash
                     pubkey_hash_version = self.my_pubkey_hash_version
-        return user, pubkey_hash, pubkey_hash_version, desired_share_target, desired_pseudoshare_target
+                    bech32_version = self.bech32_version
+        return (user, pubkey_hash, pubkey_hash_version, bech32_version,
+                desired_share_target, desired_pseudoshare_target)
     
     def preprocess_request(self, user):
         if (self.node.p2p_node is None or len(self.node.p2p_node.peers) == 0) and self.node.net.PERSIST:
             raise jsonrpc.Error_for_code(-12345)(u'p2pool is not connected to any peers')
         if time.time() > self.current_work.value['last_update'] + 60:
             raise jsonrpc.Error_for_code(-12345)(u'lost contact with bitcoind')
-        user, pubkey_hash, pubkey_hash_version, desired_share_target, desired_pseudoshare_target = self.get_user_details(user)
-        return user, pubkey_hash, pubkey_hash_version, desired_share_target, desired_pseudoshare_target
+        return self.get_user_details(user)
     
     def _estimate_local_hash_rate(self):
         if len(self.recent_shares_ts_work) == 50:
@@ -240,7 +246,8 @@ class WorkerBridge(worker_interface.WorkerBridge):
             addr_hash_rates[datum['pubkey_hash']] = addr_hash_rates.get(datum['pubkey_hash'], 0) + datum['work']/dt
         return addr_hash_rates
  
-    def get_work(self, user, pubkey_hash, pubkey_hash_version, desired_share_target, desired_pseudoshare_target, worker_ip=None):
+    def get_work(self, user, pubkey_hash, pubkey_hash_version, bech32_version,
+                 desired_share_target, desired_pseudoshare_target, worker_ip=None):
         global print_throttle
         t0 = time.time()
         if (self.node.p2p_node is None or len(self.node.p2p_node.peers) == 0) and self.node.net.PERSIST:
@@ -325,6 +332,7 @@ class WorkerBridge(worker_interface.WorkerBridge):
                     nonce=random.randrange(2**32),
                     pubkey_hash=pubkey_hash,
                     pubkey_hash_version=pubkey_hash_version,
+                    bech32_version=bech32_version,
                     subsidy=self.current_work.value['subsidy'],
                     donation=math.perfect_round(65535*self.donation_percentage/100),
                     stale_info=(lambda (orphans, doas), total, (orphans_recorded_in_chain, doas_recorded_in_chain):

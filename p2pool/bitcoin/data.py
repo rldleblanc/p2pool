@@ -3,9 +3,10 @@ from __future__ import division
 import hashlib
 import random
 import warnings
+import binascii
 
 import p2pool
-from p2pool.util import math, pack, segwit_addr
+from p2pool.util import math, pack, segwit_addr, cash_addr
 
 def hash256(data):
     return pack.IntType(256).unpack(hashlib.sha256(hashlib.sha256(data).digest()).digest())
@@ -317,31 +318,73 @@ human_address_type = ChecksummedType(pack.ComposedType([
     ('pubkey_hash', pack.IntType(160)),
 ]))
 
-def pubkey_hash_to_address(pubkey_hash, net, version=None):
-    if version == None:
-        version = net.ADDRESS_VERSION
-
-    if version == 0:
-        return segwit_addr.encode(net.HUMAN_READABLE_PART, 0, [int(x) for x in bytearray.fromhex(hex(pubkey_hash)[2:-1])])
-    return base58_encode(human_address_type.pack(dict(version=version, pubkey_hash=pubkey_hash)))
+def pubkey_hash_to_address(pubkey_hash, addr_ver, bech32_ver, net):
+    if addr_ver == -1:
+        thash = '{:x}'.format(pubkey_hash)
+        if len(thash) % 2 == 1:
+            thash = '0%s' % thash
+        data = [int(x) for x in bytearray.fromhex(thash)]
+        if net.SYMBOL.lower() in ['bch', 'tbch']:
+            return cash_addr.encode(net.HUMAN_READABLE_PART, bech32_ver, data)
+        else:
+            return segwit_addr.encode(net.HUMAN_READABLE_PART, bech32_ver, data)
+    return base58_encode(human_address_type.pack(dict(version=addr_ver, pubkey_hash=pubkey_hash)))
 
 def pubkey_to_address(pubkey, net):
-    return pubkey_hash_to_address(hash160(pubkey), net)
+    return pubkey_hash_to_address(hash160(pubkey), net.ADDRESS_VERSION, -1, net)
+
+class AddrError(Exception):
+    __slots__ = ()
 
 def address_to_pubkey_hash(address, net):
     try:
+        return get_legacy_pubkey_hash(address, net)
+    except AddrError:
+        pass
+
+    if net.SYMBOL.lower() not in ['bch', 'tbch']:
+        try:
+            return get_bech32_pubkey_hash(address, net)
+        except AddrError:
+            pass
+    else:
+        try:
+            return get_cashaddr_pubkey_hash(address, net)
+        except AddrError:
+            pass
+    raise ValueError('invalid addr')
+
+def get_legacy_pubkey_hash(address, net):
+    # P2PKH or P2SH address
+    try:
         base_decode = base58_decode(address)
         x = human_address_type.unpack(base_decode)
-        if x['version'] != net.ADDRESS_VERSION and x['version'] != net.SEGWIT_ADDRESS_VERSION:
+    except Exception as e:
+        raise AddrError
+    else:
+        if x['version'] != net.ADDRESS_VERSION and x['version'] != net.ADDRESS_P2SH_VERSION:
             raise ValueError('address not for this net!')
-        return x['pubkey_hash'], x['version']
-    except Exception, e:
-        try:
-            hrp, pubkey_hash = segwit_addr.bech32_decode(address)
-            witver, witprog = segwit_addr.decode(net.HUMAN_READABLE_PART, address)
-            return int(''.join('{:02x}'.format(x) for x in witprog), 16), 0
-        except Exception, e:
-            raise ValueError('invalid addr')
+        return x['pubkey_hash'], x['version'], -1
+
+def get_bech32_pubkey_hash(address, net):
+    try:
+        witver, witprog = segwit_addr.decode(net.HUMAN_READABLE_PART, address)
+        if witver is None or witprog is None:
+            raise ValueError
+    except Exception as e:
+        raise AddrError
+    else:
+        return int(''.join('{:02x}'.format(x) for x in witprog), 16), -1, witver
+
+def get_cashaddr_pubkey_hash(address, net):
+    try:
+        ver, data = cash_addr.decode(net.HUMAN_READABLE_PART, address)
+        if ver is None or data is None:
+            raise ValueError
+    except Exception as e:
+        raise AddrError
+    else:
+        return int(''.join('{:02x}'.format(x) for x in data), 16), -1, ver
 
 # transactions
 
@@ -365,50 +408,77 @@ def pubkey_to_script2(pubkey):
     assert len(pubkey) <= 75
     return (chr(len(pubkey)) + pubkey) + '\xac'
 
-def pubkey_hash_to_script2(pubkey_hash, version, net):
-    if version == 0:
-        hx = hex(pubkey_hash)[2:-1]
-        return '\x00\x14' + hex(pubkey_hash)[2:-1].decode("hex")
-    if version == net.SEGWIT_ADDRESS_VERSION:
+def pubkey_hash_to_script2(pubkey_hash, version, bech32_version, net):
+    if version == -1 and bech32_version >= 0:
+        decoded = '{:x}'.format(pubkey_hash)
+        if net.SYMBOL.lower() in ['bch', 'tbch']:
+            # CashAddrs can be longer than 20 bytes
+            # TODO: Check the version and restrict the bytes.
+            size = '{:x}'.format(len(decoded) // 2)
+            if len(size) % 2 == 1:
+                size = '0%s' % size
+            hsize = binascii.unhexlify(size)
+            return '\x76\xa9%s%s\x88\xac' % (hsize, pack.IntType(int(size, 16) * 8).pack(pubkey_hash))
+        else:
+            # Bech32 only allows 20 bytes
+            return '\x00\x14%s' % binascii.unhexlify(decoded)
+    if version == net.ADDRESS_P2SH_VERSION:
         return ('\xa9\x14' + pack.IntType(160).pack(pubkey_hash)) + '\x87'
     return '\x76\xa9' + ('\x14' + pack.IntType(160).pack(pubkey_hash)) + '\x88\xac'
 
-def script2_to_address(script2, net):
+def script2_to_address(script2, addr_ver, bech32_ver, net):
+    try:
+        return script2_to_pubkey_address(script2, net)
+    except AddrError:
+        pass
+    for func in script2_to_pubkey_hash_address, script2_to_bech32_address, script2_to_p2sh_address:
+        try:
+            return func(script2, addr_ver, bech32_ver, net)
+        except AddrError:
+            pass
+    raise ValueError("Invalid script2 hash %s" % binascii.hexlify(script2))
+
+def script2_to_pubkey_address(script2, net):
     try:
         pubkey = script2[1:-1]
-        script2_test = pubkey_to_script2(pubkey)
+        res = pubkey_to_script2(pubkey)
+        if res != script2:
+            raise ValueError
     except:
-        pass
-    else:
-        if script2_test == script2:
-            return pubkey_to_address(pubkey, net)
+        raise AddrError
+    return pubkey_to_address(pubkey, net)
     
+def script2_to_pubkey_hash_address(script2, addr_ver, bech32_ver, net):
+    # TODO: Check for BCH length, could be longer than 20 bytes
     try:
         pubkey_hash = pack.IntType(160).unpack(script2[3:-2])
-        script2_test2 = pubkey_hash_to_script2(pubkey_hash, net.ADDRESS_VERSION, net)
-    except:
-        pass
-    else:
-        if script2_test2 == script2:
-            return pubkey_hash_to_address(pubkey_hash, net)
+        res = pubkey_hash_to_script2(pubkey_hash, addr_ver, bech32_ver, net)
+        if res != script2:
+            raise ValueError
+    except Exception as e:
+        raise AddrError
+    return pubkey_hash_to_address(pubkey_hash, addr_ver, bech32_ver, net)
 
+def script2_to_bech32_address(script2, addr_ver, bech32_ver, net):
     try:
         pubkey_hash = int(script2[2:].encode('hex'), 16)
-        script2_test3 = pubkey_hash_to_script2(pubkey_hash, 0, net)
-    except:
-        pass
-    else:
-        if script2_test3 == script2:
-            return pubkey_hash_to_address(pubkey_hash, net, 0)
+        res = pubkey_hash_to_script2(pubkey_hash, addr_ver, bech32_ver, net)
+        if res != script2:
+            raise ValueError
+    except Exception as e:
+        raise AddrError
+    return pubkey_hash_to_address(pubkey_hash, addr_ver, bech32_ver, net)
 
+def script2_to_p2sh_address(script2, addr_ver, bech32_ver, net):
+    # TODO: Check for BCH length, could be longer than 20 bytes
     try:
         pubkey_hash = pack.IntType(160).unpack(script2[2:-1])
-        script2_test4 = pubkey_hash_to_script2(pubkey_hash, net.SEGWIT_ADDRESS_VERSION, net)
-    except:
-        pass
-    else:
-        if script2_test4 == script2:
-            return pubkey_hash_to_address(pubkey_hash, net, net.SEGWIT_ADDRESS_VERSION)
+        res = pubkey_hash_to_script2(pubkey_hash, addr_ver, bech32_ver, net)
+        if res != script2:
+            raise ValueError
+    except Exception as e:
+        raise AddrError
+    return pubkey_hash_to_address(pubkey_hash, addr_ver, bech32_ver, net)
 
 def script2_to_human(script2, net):
     try:

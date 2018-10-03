@@ -11,6 +11,8 @@ from p2pool.util import pack
 P2P_PREFIX = 'e3e1f3e8'.decode('hex') # new net magic
 P2P_PORT = 8333
 ADDRESS_VERSION = 0
+ADDRESS_P2SH_VERSION = 5
+HUMAN_READABLE_PART = 'bitcoincash'
 RPC_PORT = 8332
 RPC_CHECK = defer.inlineCallbacks(lambda bitcoind: defer.returnValue(
             (yield helper.check_block_header(bitcoind, '000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f')) and # genesis block
