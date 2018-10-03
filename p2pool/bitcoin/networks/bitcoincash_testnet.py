@@ -11,6 +11,8 @@ from p2pool.util import pack
 P2P_PREFIX = 'f4e5f3f4'.decode('hex') # new net magic
 P2P_PORT = 18333
 ADDRESS_VERSION = 111
+ADDRESS_P2SH_VERSION = 196
+HUMAN_READABLE_PART = 'bchtest'
 RPC_PORT = 18332
 RPC_CHECK = defer.inlineCallbacks(lambda bitcoind: defer.returnValue(
             'bitcoin' in (yield bitcoind.rpc_help()) and

@@ -1,4 +1,5 @@
 import unittest
+import mock
 
 from p2pool.bitcoin import data, networks
 from p2pool.util import pack
@@ -35,13 +36,13 @@ class Test(unittest.TestCase):
             )],
             tx_outs=[dict(
                 value=5003880250,
-                script=data.pubkey_hash_to_script2(pack.IntType(160).unpack('ca975b00a8c203b8692f5a18d92dc5c2d2ebc57b'.decode('hex'))),
+                script=data.pubkey_hash_to_script2(pack.IntType(160).unpack('ca975b00a8c203b8692f5a18d92dc5c2d2ebc57b'.decode('hex')), networks.nets['bitcoin'].ADDRESS_VERSION, -1, networks.nets['bitcoin']),
             )],
             lock_time=0,
         )) == 0xb53802b2333e828d6532059f46ecf6b313a42d79f97925e457fbbfda45367e5c
     
     def test_address_to_pubkey_hash(self):
-        assert data.address_to_pubkey_hash('1KUCp7YP5FP8ViRxhfszSUJCTAajK6viGy', networks.nets['bitcoin']) == pack.IntType(160).unpack('ca975b00a8c203b8692f5a18d92dc5c2d2ebc57b'.decode('hex'))
+        assert data.address_to_pubkey_hash('1KUCp7YP5FP8ViRxhfszSUJCTAajK6viGy', networks.nets['bitcoin'])[0] == pack.IntType(160).unpack('ca975b00a8c203b8692f5a18d92dc5c2d2ebc57b'.decode('hex'))
     
     def test_merkle_hash(self):
         assert data.merkle_hash([
@@ -76,3 +77,457 @@ class Test(unittest.TestCase):
             0x13375a426de15631af9afdf00c490e87cc5aab823c327b9856004d0b198d72db,
             0x67d76a64fa9b6c5d39fde87356282ef507b3dec1eead4b54e739c74e02e81db4,
         ]) == 0x37a43a3b812e4eb665975f46393b4360008824aab180f27d642de8c28073bc44
+
+class UnitTests(unittest.TestCase):
+
+    class btcnet(object):
+        SYMBOL = 'btc'
+        HUMAN_READABLE_PART = 'bc'
+        ADDRESS_VERSION = 0
+        ADDRESS_P2SH_VERSION = 3
+
+    class ltcnet(object):
+        SYMBOL = 'ltc'
+        HUMAN_READABLE_PART = 'ltc'
+        ADDRESS_VERSION = 48
+        ADDRESS_P2SH_VERSION = 50
+
+    class bchnet(object):
+        SYMBOL = 'bch'
+        HUMAN_READABLE_PART = 'bitcoincash'
+        ADDRESS_VERSION = 0
+        ADDRESS_P2SH_VERSION = 3
+
+    @mock.patch.object(data, 'human_address_type', spec=data.human_address_type)
+    @mock.patch.object(data, 'base58_encode', spec=data.base58_encode)
+    @mock.patch.object(data.segwit_addr, 'encode', spec=data.segwit_addr.encode)
+    @mock.patch.object(data.cash_addr, 'encode', spec=data.cash_addr.encode)
+    def test_pubkey_hash_to_address(self, mce, mse, mbe, mhat):
+        # Test legacy addresses
+        mbe.return_value = 'foobar'
+        mhat.pack.return_value = 'foo'
+        self.assertEqual('foobar',
+                         data.pubkey_hash_to_address('bar', 0, 0, self.btcnet))
+        self.assertEqual(0, mce.call_count)
+        self.assertEqual(0, mse.call_count)
+        mbe.assert_called_once_with('foo')
+        mhat.pack.assert_called_once_with({'version': 0, 'pubkey_hash': 'bar'})
+        mhat.reset_mock()
+        self.assertEqual('foobar',
+                         data.pubkey_hash_to_address('moo', 1, -1, self.btcnet))
+        mhat.pack.assert_called_once_with({'version': 1, 'pubkey_hash': 'moo'})
+        # Test segwit addresses
+        mse.return_value = 'moobar'
+        hash1 = 123486153218641351641531321856105641635163813486135131313818612456474534165
+        ret1 = [69, 228, 3, 253, 141, 6, 177, 99, 120, 131, 105, 238, 19, 236,
+                234, 73, 29, 205, 107, 201, 9, 238, 81, 64, 21, 78, 5, 81, 3,
+                225, 21]
+        mhat.reset_mock()
+        mbe.reset_mock()
+        self.assertEqual('moobar',
+                         data.pubkey_hash_to_address(hash1, -1, 0, self.btcnet))
+        self.assertEqual(0, mbe.call_count)
+        self.assertEqual(0, mhat.call_count)
+        self.assertEqual(0, mce.call_count)
+        mse.assert_called_once_with('bc', 0, ret1)
+        mse.reset_mock()
+        hash2 = 4328719365
+        ret2 = [1, 2, 3, 4, 5]
+        self.assertEqual('moobar',
+                         data.pubkey_hash_to_address(hash2, -1, 1, self.ltcnet))
+        mse.assert_called_once_with('ltc', 1, ret2)
+        # Test cashaddr addresses
+        mce.return_value = 'fumbar'
+        mse.reset_mock()
+        self.assertEqual('fumbar',
+                         data.pubkey_hash_to_address(hash1, -1, 0, self.bchnet))
+        self.assertEqual(0, mbe.call_count)
+        self.assertEqual(0, mhat.call_count)
+        self.assertEqual(0, mse.call_count)
+        mce.assert_called_once_with('bitcoincash', 0, ret1)
+        mce.reset_mock()
+        self.assertEqual('fumbar',
+                         data.pubkey_hash_to_address(hash2, -1, 1, self.bchnet))
+        mce.assert_called_once_with('bitcoincash', 1, ret2)
+
+    @mock.patch.object(data, 'pubkey_hash_to_address',
+                       spec=data.pubkey_hash_to_address)
+    @mock.patch.object(data, 'hash160', spec=data.hash160)
+    def test_pubkey_to_address(self, mh, mphta):
+        mphta.return_value = 'foobar'
+        mh.return_value = 'foo'
+        self.assertEqual('foobar', data.pubkey_to_address('bar', self.btcnet))
+        mh.assert_called_once_with('bar')
+        mphta.assert_called_once_with('foo', 0, -1, self.btcnet)
+        mphta.reset_mock()
+        mh.reset_mock()
+        self.assertEqual('foobar', data.pubkey_to_address('moo', self.ltcnet))
+        mh.assert_called_once_with('moo')
+        mphta.assert_called_once_with('foo', 48, -1, self.ltcnet)
+
+    @mock.patch.object(data, 'get_legacy_pubkey_hash',
+                       spec=data.get_legacy_pubkey_hash)
+    @mock.patch.object(data, 'get_bech32_pubkey_hash',
+                       spec=data.get_bech32_pubkey_hash)
+    @mock.patch.object(data, 'get_cashaddr_pubkey_hash',
+                       spec=data.get_cashaddr_pubkey_hash)
+    def test_address_to_pubkey_hash(self, mgcph, mgbph, mglph):
+        def reset_mocks():
+            for i in mglph, mgbph, mgcph:
+                i.reset_mock()
+
+        mglph.return_value = 'legacy'
+        mgbph.return_value = 'bech32'
+        mgcph.return_value = 'cashaddr'
+        self.assertEqual('legacy',
+                         data.address_to_pubkey_hash('foo', self.btcnet))
+        mglph.assert_called_once_with('foo', self.btcnet)
+        reset_mocks()
+        mglph.side_effect = [ValueError]
+        self.assertRaises(ValueError, data.address_to_pubkey_hash, 'bar',
+                          self.ltcnet)
+        mglph.assert_called_once_with('bar', self.ltcnet)
+        reset_mocks()
+        mglph.side_effect = data.AddrError
+        self.assertEqual('bech32',
+                         data.address_to_pubkey_hash('foo', self.ltcnet))
+        mgbph.assert_called_once_with('foo', self.ltcnet)
+        reset_mocks()
+        self.assertEqual('cashaddr',
+                         data.address_to_pubkey_hash('bar', self.bchnet))
+        mgcph.assert_called_once_with('bar', self.bchnet)
+        reset_mocks()
+        mgbph.side_effect = data.AddrError
+        self.assertRaises(ValueError, data.address_to_pubkey_hash, 'moo',
+                          self.btcnet)
+        mgbph.assert_called_once_with('moo', self.btcnet)
+        reset_mocks()
+        mgcph.side_effect = data.AddrError
+        self.assertRaises(ValueError, data.address_to_pubkey_hash, 'foo',
+                          self.bchnet)
+        mgcph.assert_called_once_with('foo', self.bchnet)
+
+    @mock.patch.object(data, 'base58_decode', spec=data.base58_decode)
+    @mock.patch.object(data, 'human_address_type', spec=data.human_address_type)
+    def test_get_legacy_pubkey_hash(self, mhat, mbd):
+        mbd.side_effect = ValueError
+        mhat.unpack.return_value = {'version': 0, 'pubkey_hash': 'foo'}
+        self.assertRaises(data.AddrError, data.get_legacy_pubkey_hash, 'bar',
+                          self.btcnet)
+        mbd.side_effect = None
+        mbd.return_value = 'moo'
+        mhat.unpack.side_effect = ValueError
+        self.assertRaises(data.AddrError, data.get_legacy_pubkey_hash, 'bar',
+                          self.btcnet)
+        mhat.unpack.side_effect = None
+        for t in self.bchnet, self.ltcnet:
+            netvers = [t.ADDRESS_VERSION, t.ADDRESS_P2SH_VERSION]
+            for v in range(256):
+                mbd.reset_mock()
+                mhat.reset_mock()
+                mhat.unpack.return_value['version'] = v
+                if v in netvers:
+                    self.assertTupleEqual(('foo', v, -1),
+                                          data.get_legacy_pubkey_hash('foobar', t))
+                else:
+                    self.assertRaises(ValueError, data.get_legacy_pubkey_hash,
+                                      'foobar', t)
+
+
+    @mock.patch.object(data.segwit_addr, 'decode', spec=data.segwit_addr.decode)
+    def test_get_bech32_pubkey_hash(self, msd):
+        msd.return_value = None, 'bar'
+        self.assertRaises(data.AddrError, data.get_bech32_pubkey_hash, 'foo',
+                          self.btcnet)
+        msd.return_value = 0, None
+        self.assertRaises(data.AddrError, data.get_bech32_pubkey_hash, 'foo',
+                          self.btcnet)
+        msd.side_effect = ValueError
+        self.assertRaises(data.AddrError, data.get_bech32_pubkey_hash, 'foo',
+                          self.btcnet)
+        msd.side_effect = None
+        msd.return_value = 3, [1, 2, 3, 4, 5]
+        msd.reset_mock()
+        self.assertTupleEqual((4328719365, -1, 3),
+                              data.get_bech32_pubkey_hash('foo', self.btcnet))
+        msd.assert_called_once_with('bc', 'foo')
+        msd.reset_mock()
+        msd.return_value = 7, [5, 4, 3, 2, 1]
+        self.assertTupleEqual((21542142465, -1, 7),
+                              data.get_bech32_pubkey_hash('moo', self.ltcnet))
+        msd.assert_called_once_with('ltc', 'moo')
+
+    @mock.patch.object(data.cash_addr, 'decode', spec=data.cash_addr.decode)
+    def test_get_cashaddr_pubkey_hash(self, mcd):
+        mcd.return_value = None, 'bar'
+        self.assertRaises(data.AddrError, data.get_cashaddr_pubkey_hash, 'foo',
+                          self.bchnet)
+        mcd.return_value = 0, None
+        self.assertRaises(data.AddrError, data.get_cashaddr_pubkey_hash, 'foo',
+                          self.bchnet)
+        mcd.side_effect = ValueError
+        self.assertRaises(data.AddrError, data.get_cashaddr_pubkey_hash, 'foo',
+                          self.bchnet)
+        mcd.side_effect = None
+        mcd.return_value = 1, [1, 2, 3, 4, 5]
+        mcd.reset_mock()
+        self.assertTupleEqual((4328719365, -1, 1),
+                              data.get_cashaddr_pubkey_hash('foo', self.bchnet))
+        mcd.assert_called_once_with('bitcoincash', 'foo')
+        mcd.reset_mock()
+        mcd.return_value = 7, [5, 4, 3, 2, 1]
+        self.assertTupleEqual((21542142465, -1, 7),
+                              data.get_cashaddr_pubkey_hash('moo', self.bchnet))
+        mcd.assert_called_once_with('bitcoincash', 'moo')
+
+    @mock.patch.object(data, 'pack', spec=data.pack)
+    def test_pubkey_hash_to_script2(self, mp):
+        mp.IntType().pack.return_value = '\xde\xad\xbe\xef'
+        legacy_out = '\x76\xa9\x14\xde\xad\xbe\xef\x88\xac'
+        self.assertEqual(legacy_out, data.pubkey_hash_to_script2(1234, 0, -1,
+                                                                 self.btcnet))
+        mp.IntType().pack.assert_called_once_with(1234)
+        mp.reset_mock()
+        p2sh_out = '\xa9\x14\xde\xad\xbe\xef\x87'
+        self.assertEqual(p2sh_out, data.pubkey_hash_to_script2(1234, 3, -1,
+                                                               self.btcnet))
+        mp.IntType().pack.assert_called_once_with(1234)
+        mp.reset_mock()
+        phash = int('deadbeef', 16)
+        bech32_out = '\x00\x14\xde\xad\xbe\xef'
+        self.assertEqual(bech32_out, data.pubkey_hash_to_script2(phash, -1, 2,
+                                                                 self.ltcnet))
+        self.assertEqual(0, mp.IntType().pack.call_count)
+        cashaddr_out = '\x76\xa9\x04\xde\xad\xbe\xef\x88\xac'
+        mp.reset_mock()
+        self.assertEqual(cashaddr_out, data.pubkey_hash_to_script2(phash, -1, 1,
+                                                                   self.bchnet))
+        mp.IntType.assert_called_once_with(32)
+        mp.IntType().pack.assert_called_once_with(phash)
+
+        # Max cashaddr hash size.
+        phash2 = int('deadbeef' * 16, 16)
+        mp.IntType().pack.return_value = '\xde\xad\xbe\xef' * 16
+        mp.reset_mock()
+        cashaddr_out2 = '\x76\xa9\x40%s\x88\xac' % ('\xde\xad\xbe\xef' * 16)
+        self.assertEqual(cashaddr_out2, data.pubkey_hash_to_script2(phash2, -1, 5,
+                                                                    self.bchnet))
+        mp.IntType.assert_called_once_with(512)
+        mp.IntType().pack.assert_called_once_with(phash2)
+
+    @mock.patch.object(data, 'script2_to_pubkey_address',
+                       spec=data.script2_to_pubkey_address)
+    @mock.patch.object(data, 'script2_to_pubkey_hash_address',
+                       spec=data.script2_to_pubkey_hash_address)
+    @mock.patch.object(data, 'script2_to_bech32_address',
+                       spec=data.script2_to_bech32_address)
+    @mock.patch.object(data, 'script2_to_p2sh_address',
+                       spec=data.script2_to_p2sh_address)
+    def test_script2_to_address(self, mstpa, mstba, mstpha, mstpka):
+        mstpa.side_effect = data.AddrError
+        mstpa.return_value = 'P2SH'
+        mstba.side_effect = data.AddrError
+        mstba.return_value = 'Bech32'
+        mstpha.side_effect = data.AddrError
+        mstpha.return_value = 'Hash'
+        mstpka.side_effect = data.AddrError
+        mstpka.return_value = 'Pubkey'
+        self.assertRaises(ValueError, data.script2_to_address, 'foobar', 1, -1,
+                          self.btcnet)
+        mstpa.assert_called_once_with('foobar', 1, -1, self.btcnet)
+        mstba.assert_called_once_with('foobar', 1, -1, self.btcnet)
+        mstpha.assert_called_once_with('foobar', 1, -1, self.btcnet)
+        mstpka.assert_called_once_with('foobar', self.btcnet)
+        mstpka.side_effect = None
+        self.assertEqual('Pubkey', data.script2_to_address('foobar', 1, -1,
+                                                            self.btcnet))
+        mstpka.side_effect = data.AddrError
+        mstpha.side_effect = None
+        self.assertEqual('Hash', data.script2_to_address('foobar', 1, -1,
+                                                          self.btcnet))
+        mstpha.side_effect = data.AddrError
+        mstba.side_effect = None
+        self.assertEqual('Bech32', data.script2_to_address('foobar', 1, -1,
+                                                            self.btcnet))
+        mstba.side_effect = data.AddrError
+        mstpa.side_effect = None
+        self.assertEqual('P2SH', data.script2_to_address('foobar', 1, -1,
+                                                          self.btcnet))
+
+    @mock.patch.object(data, 'pubkey_to_script2', spec=data.pubkey_to_script2)
+    @mock.patch.object(data, 'pubkey_to_address', spec=data.pubkey_to_address)
+    def test_script2_to_pubkey_address(self, mpta, mpts):
+        mpts.side_effect = ValueError
+        self.assertRaises(data.AddrError, data.script2_to_pubkey_address, 'foo',
+                          self.btcnet)
+        mpts.side_effect = None
+        mpts.return_value = 'moobar'
+        mpts.reset_mock()
+        self.assertRaises(data.AddrError, data.script2_to_pubkey_address,
+                          'foobar', self.btcnet)
+        mpts.assert_called_once_with('ooba')
+        mpta.return_value = 'foo'
+        self.assertEqual('foo', data.script2_to_pubkey_address('moobar',
+                                                               self.btcnet))
+
+    @mock.patch.object(data, 'pack', spec=data.pack)
+    @mock.patch.object(data, 'pubkey_hash_to_script2',
+                       spec=data.pubkey_hash_to_script2)
+    @mock.patch.object(data, 'pubkey_hash_to_address',
+                       spec=data.pubkey_hash_to_address)
+    def test_script2_to_pubkey_hash_address(self, mphta, mphts, mp):
+        mp.IntType().unpack.side_effect = ValueError
+        mphts.return_value = 'foo'
+        self.assertRaises(data.AddrError, data.script2_to_pubkey_hash_address,
+                          'bar', 1, -1, self.btcnet)
+        mp.IntType().unpack.side_effect = None
+        mp.IntType().unpack.return_value = 'moo'
+        mphts.side_effect = ValueError
+        self.assertRaises(data.AddrError, data.script2_to_pubkey_hash_address,
+                          'bar', 1, -1, self.btcnet)
+        mphts.side_effect = None
+        mp.reset_mock()
+        mphts.reset_mock()
+        self.assertRaises(data.AddrError, data.script2_to_pubkey_hash_address,
+                          'foobar', 1, -1, self.btcnet)
+        mp.IntType.assert_called_once_with(160)
+        mp.IntType().unpack.assert_called_once_with('b')
+        mphts.assert_called_once_with('moo', 1, -1, self.btcnet)
+        mphta.return_value = 'moobar'
+        self.assertEqual('moobar',
+                         data.script2_to_pubkey_hash_address('foo', 1, -1,
+                                                             self.btcnet))
+
+    @mock.patch.object(data, 'pubkey_hash_to_script2',
+                       spec=data.pubkey_hash_to_script2)
+    @mock.patch.object(data, 'pubkey_hash_to_address',
+                       spec=data.pubkey_hash_to_address)
+    def test_script2_to_bech32_address(self, mphta, mphts):
+        phash = '\xde\xad\xbe\xef'
+        mphts.side_effect = ValueError
+        self.assertRaises(data.AddrError, data.script2_to_bech32_address,
+                          phash, 1, -1, self.btcnet)
+        mphts.reset_mock()
+        mphts.side_effect = None
+        mphts.return_value = 'bar'
+        self.assertRaises(data.AddrError, data.script2_to_bech32_address,
+                          phash, 1, -1, self.btcnet)
+        mphts.assert_called_once_with(48879, 1, -1, self.btcnet)
+        mphts.return_value = phash
+        mphta.return_value = 'foobar'
+        self.assertEqual('foobar', data.script2_to_bech32_address(phash, 1, -1,
+                                                                  self.btcnet))
+
+    @mock.patch.object(data, 'pack', spec=data.pack)
+    @mock.patch.object(data, 'pubkey_hash_to_script2',
+                       spec=data.pubkey_hash_to_script2)
+    @mock.patch.object(data, 'pubkey_hash_to_address',
+                       spec=data.pubkey_hash_to_address)
+    def test_script2_to_p2sh_address(self, mphta, mphts, mp):
+        mp.IntType().unpack.side_effect = ValueError
+        mphts.return_value = 'foo'
+        self.assertRaises(data.AddrError, data.script2_to_p2sh_address,
+                          'bar', 1, -1, self.btcnet)
+        mp.IntType().unpack.side_effect = None
+        mp.IntType().unpack.return_value = 'moo'
+        mphts.side_effect = ValueError
+        self.assertRaises(data.AddrError, data.script2_to_p2sh_address,
+                          'bar', 1, -1, self.btcnet)
+        mphts.side_effect = None
+        mp.IntType().unpack.reset_mock()
+        mphts.reset_mock()
+        self.assertRaises(data.AddrError, data.script2_to_p2sh_address,
+                          'foobar', 1, -1, self.btcnet)
+        mp.IntType.called_once_with(160)
+        mp.IntType().unpack.assert_called_once_with('oba')
+        mphts.assert_called_once_with('moo', 1, -1, self.btcnet)
+        mphts.return_value = 'moo'
+        mphta.return_value = 'moobar'
+        self.assertEqual('moobar', data.script2_to_p2sh_address('moo', 1, -1,
+                                                                self.btcnet))
+
+class IntegrationTests(unittest.TestCase):
+
+    btc_addrs = [
+                 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4',
+                 'bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3',
+                 '3P14159f73E4gFr7JterCCQh9QjiTjiZrG',
+                 '1LR4dmTSS2BV7yrMKKv2SwYBGWhtEGCU29',
+                ]
+
+    tbtc_addrs = [
+                  'mtXWDB6k5yC5v7TcwKZHB89SUp85yCKshy',
+                  '2MzQwSSnBHWHqSAqtTVQ6v47XtaisrJa1Vc',
+                  'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx',
+                  'tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sl5k7',
+                 ]
+
+    ltc_addrs = [
+                 'Lf3iRHmfbLcZry4Y28esSJ9ASAfGJtBiyf',
+                 'MJVQisa7ragNAvfEMw3Khf5qUDiWQuFtq5',
+                 'ltc1q5z36sntfrnd2us8aphw6tmk6ywl49r3q0vk2fm',
+                 'ltc1q77e48sy8er43smx84n6ykmxn8p7d7qxdxk5u5xkz98kamlqyrlmsezxv5d',
+                ]
+
+    tltc_addrs = [
+                  'QfznDEYLScMQokgvUAU8xiGvATevxMfyxy',
+                  'tltc1q7jvs3ar80xxexedkrehya6f6jlqqmwdpw8pxrq',
+                  'mmkeFSjuEyD5QdnciN4iAHoQuG3rcxnArW',
+                 ]
+
+    bch_addrs = [
+                 '35qL43qYwLdKtnR7yMfGNDvzv6WyZ8yT2n',
+                 'bitcoincash:pqkh9ahfj069qv8l6eysyufazpe4fdjq3u4hna323j',
+                 '1D573bqaDiGvMxMRXWoJ6G8yhz9sLs9Z82',
+                 'bitcoincash:qzzxswqlwze7c0gj8mwel8l4q3wqk0krlu7jch88gv',
+                ]
+
+    bch_addrs2 = [
+                  'pqkh9ahfj069qv8l6eysyufazpe4fdjq3u4hna323j',
+                  'qzzxswqlwze7c0gj8mwel8l4q3wqk0krlu7jch88gv',
+                 ]
+
+    tbch_addrs = [
+                  '2MzQwSSnBHWHqSAqtTVQ6v47XtaisrJa1Vc',
+                  'mtXWDB6k5yC5v7TcwKZHB89SUp85yCKshy',
+                  'bchtest:pp8f7ww2g6y07ypp9r4yendrgyznysc9kqxh6acwu3',
+                  'bchtest:qz8tg3hcp86jd7ehqkdr9nuz2hzvks7jmg6lv9mkup',
+                  'bchtest:qr2a38zyjmjz7jayf5ne98l3j348e35cw5w49dje2l',
+                  'bchtest:pradvyw424yn9a4me27jggcsml47wxznhcp6u5rqak',
+                 ]
+
+    tbch_addrs2 = [
+                   'pp8f7ww2g6y07ypp9r4yendrgyznysc9kqxh6acwu3',
+                   'qz8tg3hcp86jd7ehqkdr9nuz2hzvks7jmg6lv9mkup',
+                   'qr2a38zyjmjz7jayf5ne98l3j348e35cw5w49dje2l',
+                   'pradvyw424yn9a4me27jggcsml47wxznhcp6u5rqak',
+                  ]
+
+    def addr_test(self, addresses, net, prefix=""):
+        for addr in addresses:
+            script = data.address_to_pubkey_hash(addr, net)
+            res = data.pubkey_hash_to_script2(script[0], script[1], script[2], net)
+            com_addr = data.script2_to_address(res, script[1], script[2], net)
+            self.assertEqual(com_addr, prefix + addr)
+
+    def test_btc_addresses(self):
+        self.addr_test(self.btc_addrs, networks.nets['bitcoin'])
+
+    def test_tbtc_addresses(self):
+        self.addr_test(self.tbtc_addrs, networks.nets['bitcoin_testnet'])
+
+    def test_ltc_addresses(self):
+        self.addr_test(self.ltc_addrs, networks.nets['litecoin'])
+
+    def test_tltc_addresses(self):
+        self.addr_test(self.tltc_addrs, networks.nets['litecoin_testnet'])
+
+    def test_bch_addresses(self):
+        self.addr_test(self.bch_addrs, networks.nets['bitcoincash'])
+        self.addr_test(self.bch_addrs2, networks.nets['bitcoincash'],
+                       'bitcoincash:')
+
+    def test_tbch_addresses(self):
+        self.addr_test(self.tbch_addrs, networks.nets['bitcoincash_testnet'])
+        self.addr_test(self.tbch_addrs2, networks.nets['bitcoincash_testnet'],
+                       'bchtest:')
