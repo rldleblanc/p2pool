@@ -104,9 +104,9 @@ class BaseShare(object):
                 ('previous_share_hash', pack.PossiblyNoneType(0, pack.IntType(256))),
                 ('coinbase', pack.VarStrType()),
                 ('nonce', pack.IntType(32)),
-                ('pubkey_hash', pack.IntType(160)),
-                ] + ([('pubkey_hash_version', pack.IntType(8)),
-                      ('bech32_version', pack.IntType(8))] if cls.VERSION >= 34 else []) + [
+                ] + ([('address', pack.VarStrType())]
+                        if cls.VERSION >= 34
+                            else [('pubkey_hash', pack.IntType(160))]) + [
                 ('subsidy', pack.IntType(64)),
                 ('donation', pack.IntType(16)),
                 ('stale_info', pack.EnumType(pack.IntType(8), dict((k, {0: None, 253: 'orphan', 254: 'doa'}.get(k, 'unk%i' % (k,))) for k in xrange(256)))),
@@ -246,12 +246,26 @@ class BaseShare(object):
         assert total_weight == sum(weights.itervalues()) + donation_weight, (total_weight, sum(weights.itervalues()) + donation_weight)
         
         amounts = dict((script, share_data['subsidy']*(199*weight)//(200*total_weight)) for script, weight in weights.iteritems()) # 99.5% goes according to weights prior to this share
-        if cls.VERSION >= 34:
-            this_script = bitcoin_data.pubkey_hash_to_script2(share_data['pubkey_hash'], share_data['pubkey_hash_version'], share_data['bech32_version'], net.PARENT)
+        if 'address' not in share_data:
+            this_address = bitcoin_data.pubkey_hash_to_address(
+                    share_data['pubkey_hash'], net.PARENT.ADDRESS_VERSION,
+                    -1, net.PARENT)
         else:
-            this_script = bitcoin_data.pubkey_hash_to_script2(share_data['pubkey_hash'], net.PARENT.ADDRESS_VERSION, -1, net.PARENT)
-        amounts[this_script] = amounts.get(this_script, 0) + share_data['subsidy']//200 # 0.5% goes to block finder
-        amounts[DONATION_SCRIPT] = amounts.get(DONATION_SCRIPT, 0) + share_data['subsidy'] - sum(amounts.itervalues()) # all that's left over is the donation weight and some extra satoshis due to rounding
+            this_address = share_data['address']
+        donation_address = bitcoin_data.script2_to_address(
+                DONATION_SCRIPT, net.PARENT.ADDRESS_VERSION, -1, net.PARENT)
+        # 0.5% goes to block finder
+        amounts[this_address] = amounts.get(this_address, 0) \
+                                + share_data['subsidy']//200
+        # all that's left over is the donation weight and some extra
+        # satoshis due to rounding
+        amounts[donation_address] = amounts.get(donation_address, 0) \
+                                    + share_data['subsidy'] \
+                                    - sum(amounts.itervalues())
+        if cls.VERSION < 34 and 'pubkey_hash' not in share_data:
+            share_data['pubkey_hash'], _, _ = bitcoin_data.address_to_pubkey_hash(
+                    this_address, net.PARENT)
+            del(share_data['address'])
         
         if sum(amounts.itervalues()) != share_data['subsidy'] or any(x < 0 for x in amounts.itervalues()):
             raise ValueError()
@@ -303,6 +317,11 @@ class BaseShare(object):
         if segwit_activated:
             share_info['segwit_data'] = segwit_data
         
+        payouts = [dict(value=amounts[addr],
+                        script=bitcoin_data.address_to_script2(addr, net.PARENT)
+                        ) for addr in dests if amounts[addr] and addr != donation_address]
+        payouts.append({'script': DONATION_SCRIPT, 'value': amounts[donation_address]})
+
         gentx = dict(
             version=1,
             tx_ins=[dict(
@@ -310,9 +329,14 @@ class BaseShare(object):
                 sequence=None,
                 script=share_data['coinbase'],
             )],
-            tx_outs=([dict(value=0, script='\x6a\x24\xaa\x21\xa9\xed' + pack.IntType(256).pack(witness_commitment_hash))] if segwit_activated else []) +
-                [dict(value=amounts[script], script=script) for script in dests if amounts[script] or script == DONATION_SCRIPT] +
-                [dict(value=0, script='\x6a\x28' + cls.get_ref_hash(net, share_info, ref_merkle_link) + pack.IntType(64).pack(last_txout_nonce))],
+            tx_outs=([dict(value=0, script='\x6a\x24\xaa\x21\xa9\xed' \
+                                           + pack.IntType(256).pack(
+                                                witness_commitment_hash))]
+                                           if segwit_activated else []) \
+                    + payouts \
+                    + [dict(value=0, script='\x6a\x28' + cls.get_ref_hash(
+                        net, share_info, ref_merkle_link) \
+                                + pack.IntType(64).pack(last_txout_nonce))],
             lock_time=0,
         )
         if segwit_activated:
@@ -390,12 +414,14 @@ class BaseShare(object):
         self.timestamp = self.share_info['timestamp']
         self.previous_hash = self.share_data['previous_share_hash']
         if self.VERSION >= 34:
-            self.new_script = bitcoin_data.pubkey_hash_to_script2(
-                    self.share_data['pubkey_hash'],
-                    self.share_data['pubkey_hash_version'],
-                    self.share_data['bech32_version'], net.PARENT)
+            self.new_script = bitcoin_data.address_to_script2(
+                    self.share_data['address'], net.PARENT)
+            self.address = self.share_data['address']
         else:
             self.new_script = bitcoin_data.pubkey_hash_to_script2(
+                    self.share_data['pubkey_hash'],
+                    net.PARENT.ADDRESS_VERSION, -1, net.PARENT)
+            self.address = bitcoin_data.pubkey_hash_to_address(
                     self.share_data['pubkey_hash'],
                     net.PARENT.ADDRESS_VERSION, -1, net.PARENT)
         self.desired_version = self.share_data['desired_version']
@@ -482,7 +508,9 @@ class BaseShare(object):
             #print "Missing %i transactions of %i with %i known" % (missing, len(other_tx_hashes), len(feecache))
             if missing == 0:
                 max_subsidy = sum(fees) + base_subsidy
-                details = "Max allowed = %i, requested subsidy = %i, share hash = %064x, miner = %s" % (max_subsidy, self.share_data['subsidy'], self.hash, bitcoin_data.script2_to_address(self.new_script, self.net.PARENT))
+                details = "Max allowed = %i, requested subsidy = %i, share hash = %064x, miner = %s" % (
+                        max_subsidy, self.share_data['subsidy'], self.hash,
+                        self.address)
                 if self.share_data['subsidy'] > max_subsidy:
                     self.naughty = 1
                     # Raising an error would make running this code fork the network. Perhaps we can include this when we fork to share version 34.
@@ -519,8 +547,14 @@ class BaseShare(object):
         type(self).gentx_size   = self.gentx_size # saving this share's gentx size as a class variable is an ugly hack, and you're welcome to hate me for doing it. But it works.
         type(self).gentx_weight = self.gentx_weight
 
-        if not self.naughty: print "Received good share: diff=%.2e hash=%064x miner=%s" % (self.net.PARENT.DUMB_SCRYPT_DIFF*float(bitcoin_data.target_to_difficulty(self.target)), self.hash, bitcoin_data.script2_to_address(self.new_script, self.net.PARENT))
-        else: print "Received naughty=%i share: diff=%.2e hash=%064x miner=%s" % (self.naughty, self.net.PARENT.DUMB_SCRYPT_DIFF*float(bitcoin_data.target_to_difficulty(self.target)), self.hash, bitcoin_data.script2_to_address(self.new_script, self.net.PARENT))
+        _diff = self.net.PARENT.DUMB_SCRYPT_DIFF*float(
+                bitcoin_data.target_to_difficulty(self.target))
+        if not self.naughty:
+            print("Received good share: diff=%.2e hash=%064x miner=%s" %
+                    (_diff, self.hash, self.address))
+        else:
+            print("Received naughty=%i share: diff=%.2e hash=%064x miner=%s" %
+                    (self.naughty, _diff, self.hash, self.address))
         return gentx # only used by as_block
     
     def get_other_tx_hashes(self, tracker):
@@ -598,7 +632,8 @@ class WeightsSkipList(forest.TrackerSkipList):
         from p2pool.bitcoin import data as bitcoin_data
         share = self.tracker.items[element]
         att = bitcoin_data.target_to_average_attempts(share.target)
-        return 1, {share.new_script: att*(65535-share.share_data['donation'])}, att*65535, att*share.share_data['donation']
+        return (1, {share.address: att*(65535-share.share_data['donation'])},
+                att*65535, att*share.share_data['donation'])
     
     def combine_deltas(self, (share_count1, weights1, total_weight1, total_donation_weight1), (share_count2, weights2, total_weight2, total_donation_weight2)):
         return share_count1 + share_count2, math.add_dicts(weights1, weights2), total_weight1 + total_weight2, total_donation_weight1 + total_donation_weight2
@@ -850,7 +885,9 @@ def get_user_stale_props(tracker, share_hash, lookbehind):
 def get_expected_payouts(tracker, best_share_hash, block_target, subsidy, net):
     weights, total_weight, donation_weight = tracker.get_cumulative_weights(best_share_hash, min(tracker.get_height(best_share_hash), net.REAL_CHAIN_LENGTH), 65535*net.SPREAD*bitcoin_data.target_to_average_attempts(block_target))
     res = dict((script, subsidy*weight//total_weight) for script, weight in weights.iteritems())
-    res[DONATION_SCRIPT] = res.get(DONATION_SCRIPT, 0) + subsidy - sum(res.itervalues())
+    donation_addr = bitcoin_data.script2_to_address(
+            DONATION_SCRIPT, net.PARENT.ADDRESS_VERSION, -1, net.PARENT)
+    res[donation_addr] = res.get(donation_addr, 0) + subsidy - sum(res.itervalues())
     return res
 
 def get_desired_version_counts(tracker, best_share_hash, dist):
