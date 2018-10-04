@@ -165,6 +165,17 @@ class UnitTests(unittest.TestCase):
         mh.assert_called_once_with('moo')
         mphta.assert_called_once_with('foo', 48, -1, self.ltcnet)
 
+    @mock.patch.object(data, 'address_to_pubkey_hash',
+                       spec=data.address_to_pubkey_hash)
+    @mock.patch.object(data, 'pubkey_hash_to_script2',
+                       spec=data.pubkey_hash_to_script2)
+    def test_address_to_script2(self, mphts, matph):
+        matph.return_value = ('foo', 'moobar', 'meh')
+        mphts.return_value = 'bar'
+        self.assertEqual('bar', data.address_to_script2('moo', self.btcnet))
+        matph.assert_called_once_with('moo', self.btcnet)
+        mphts.assert_called_once_with('foo', 'moobar', 'meh', self.btcnet)
+
     @mock.patch.object(data, 'get_legacy_pubkey_hash',
                        spec=data.get_legacy_pubkey_hash)
     @mock.patch.object(data, 'get_bech32_pubkey_hash',

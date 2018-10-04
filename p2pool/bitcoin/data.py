@@ -336,6 +336,10 @@ def pubkey_to_address(pubkey, net):
 class AddrError(Exception):
     __slots__ = ()
 
+def address_to_script2(address, net):
+    res = address_to_pubkey_hash(address, net)
+    return pubkey_hash_to_script2(res[0], res[1], res[2], net)
+
 def address_to_pubkey_hash(address, net):
     try:
         return get_legacy_pubkey_hash(address, net)

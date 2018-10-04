@@ -64,8 +64,10 @@ class keypool():
 
     def paytotal(self):
         self.payouttotal = 0.0
+        print("pubkeys.keys: %s" % pubkeys.keys)
         for i in range(len(pubkeys.keys)):
-            self.payouttotal += node.get_current_txouts().get(bitcoin_data.pubkey_hash_to_script2(pubkeys.keys[i]['hash'], pubkeys.keys[i]['version'], net), 0)*1e-8
+            self.payouttotal += node.get_current_txouts().get(
+                    pubkeys.keys[i]['address'], 0) * 1e-8
         return self.payouttotal
 
     def getpaytotal(self):
@@ -144,17 +146,17 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint):
             with open(address_path, 'wb') as f:
                 f.write(address)
 
-            my_pubkey_hash, my_pubkey_hash_version = bitcoin_data.address_to_pubkey_hash(address, net.PARENT)
-            print '    ...success! Payout address:', bitcoin_data.pubkey_hash_to_address(my_pubkey_hash, net.PARENT, my_pubkey_hash_version)
-            print
+            my_address = address
+            print('    ...success! Payout address: %s' % my_address)
+            print()
 
-            pubkeys.addkey({'hash': my_pubkey_hash, 'version': my_pubkey_hash_version})
+            pubkeys.addkey({'address': my_address})
         elif args.address != 'dynamic':
-            my_pubkey_hash = args.pubkey_hash
-            my_pubkey_hash_version = args.pubkey_hash_version
-            print '    ...success! Payout address:', bitcoin_data.pubkey_hash_to_address(my_pubkey_hash, net.PARENT, my_pubkey_hash_version)
-            print
-            pubkeys.addkey({'hash': my_pubkey_hash, 'version': my_pubkey_hash_version})
+            my_address = args.address
+            print('    ...success! Payout address: %s' % my_address)
+            print()
+
+            pubkeys.addkey({'address': my_address})
         else:
             print '    Entering dynamic address mode.'
 
@@ -163,16 +165,14 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint):
                 args.numaddresses = 2
             for i in range(args.numaddresses):
                 address = yield deferral.retry('Error getting a dynamic address from bitcoind:', 5)(lambda: bitcoind.rpc_getnewaddress('p2pool'))()
-                new_pubkey, pubkey_version = bitcoin_data.address_to_pubkey_hash(address, net.PARENT)
-                pubkeys.addkey({'hash': new_pubkey, 'version': pubkey_version})
+                pubkeys.addkey({'address': address})
 
             pubkeys.updatestamp(time.time())
 
-            my_pubkey_hash = pubkeys.keys[0]['hash']
-            my_pubkey_hash_version = pubkeys.keys[0]['version']
+            my_address = pubkeys.keys[0]['address']
 
             for i in range(len(pubkeys.keys)):
-                print '    ...payout %d: %s' % (i, bitcoin_data.pubkey_hash_to_address(pubkeys.keys[i]['hash'], net.PARENT, pubkeys.keys[i]['version']),)
+                print('    ...payout %d: %s' % (i, pubkeys[i]['address']))
         
         print "Loading shares..."
         shares = {}
@@ -291,7 +291,9 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint):
         
         print 'Listening for workers on %r port %i...' % (worker_endpoint[0], worker_endpoint[1])
         
-        wb = work.WorkerBridge(node, my_pubkey_hash, my_pubkey_hash_version, args.donation_percentage, merged_urls, args.worker_fee, args, pubkeys, bitcoind)
+        wb = work.WorkerBridge(node, my_address, args.donation_percentage,
+                               merged_urls, args.worker_fee, args, pubkeys,
+                               bitcoind)
         web_root = web.get_web_root(wb, datadir_path, bitcoind_getinfo_var, static_dir=args.web_static)
         caching_wb = worker_interface.CachingWorkerBridge(wb)
         worker_interface.WorkerInterface(caching_wb).attach_to(web_root, get_handler=lambda request: request.redirect('/static/'))
@@ -405,7 +407,8 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint):
                         paystr = ''
                         paytot = 0.0
                         for i in range(len(pubkeys.keys)):
-                            curtot = node.get_current_txouts().get(bitcoin_data.pubkey_hash_to_script2(pubkeys.keys[i]['hash'], pubkeys.keys[i]['version'], net.PARENT), 0)
+                            curtot = node.get_current_txouts().get(
+                                    pubkeys.keys[i]['address'], 0)
                             paytot += curtot*1e-8
                             paystr += "(%.4f)" % (curtot*1e-8,)
                         paystr += "=%.4f" % (paytot,)
@@ -631,7 +634,8 @@ def run():
     
     if args.address is not None and args.address != 'dynamic':
         try:
-            args.pubkey_hash, args.pubkey_hash_version = bitcoin_data.address_to_pubkey_hash(args.address, net.PARENT)
+            _ = bitcoin_data.address_to_pubkey_hash(args.address, net.PARENT)
+            args.pubkey_hash = True
         except Exception, e:
             parser.error('error parsing address: ' + repr(e))
     else:
