@@ -415,17 +415,16 @@ def pubkey_to_script2(pubkey):
 def pubkey_hash_to_script2(pubkey_hash, version, bech32_version, net):
     if version == -1 and bech32_version >= 0:
         decoded = '{:x}'.format(pubkey_hash)
+        size = '{:x}'.format(len(decoded) // 2)
+        if len(size) % 2 == 1:
+            size = '0%s' % size
+        hsize = binascii.unhexlify(size)
         if net.SYMBOL.lower() in ['bch', 'tbch']:
             # CashAddrs can be longer than 20 bytes
             # TODO: Check the version and restrict the bytes.
-            size = '{:x}'.format(len(decoded) // 2)
-            if len(size) % 2 == 1:
-                size = '0%s' % size
-            hsize = binascii.unhexlify(size)
             return '\x76\xa9%s%s\x88\xac' % (hsize, pack.IntType(int(size, 16) * 8).pack(pubkey_hash))
         else:
-            # Bech32 only allows 20 bytes
-            return '\x00\x14%s' % binascii.unhexlify(decoded)
+            return '\x00%s%s' % (hsize, binascii.unhexlify(decoded))
     if version == net.ADDRESS_P2SH_VERSION:
         return ('\xa9\x14' + pack.IntType(160).pack(pubkey_hash)) + '\x87'
     return '\x76\xa9' + ('\x14' + pack.IntType(160).pack(pubkey_hash)) + '\x88\xac'
