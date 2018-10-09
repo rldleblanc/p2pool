@@ -305,7 +305,7 @@ class UnitTests(unittest.TestCase):
         mp.IntType().pack.assert_called_once_with(1234)
         mp.reset_mock()
         phash = int('deadbeef', 16)
-        bech32_out = '\x00\x14\xde\xad\xbe\xef'
+        bech32_out = '\x00\x04\xde\xad\xbe\xef'
         self.assertEqual(bech32_out, data.pubkey_hash_to_script2(phash, -1, 2,
                                                                  self.ltcnet))
         self.assertEqual(0, mp.IntType().pack.call_count)
