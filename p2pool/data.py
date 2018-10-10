@@ -269,8 +269,10 @@ class BaseShare(object):
         
         if sum(amounts.itervalues()) != share_data['subsidy'] or any(x < 0 for x in amounts.itervalues()):
             raise ValueError()
-        
-        dests = sorted(amounts.iterkeys(), key=lambda script: (script == DONATION_SCRIPT, amounts[script], script))[-4000:] # block length limit, unlikely to ever be hit
+
+        # block length limit, unlikely to ever be hit
+        dests = sorted(amounts.iterkeys(), key=lambda address: (
+            address == donation_address, amounts[address], address))[-4000:]
         if len(dests) >= 200:
             print "found %i payment dests. Antminer S9s may crash when this is close to 226." % len(dests)
 
