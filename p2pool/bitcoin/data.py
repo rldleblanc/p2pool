@@ -415,6 +415,7 @@ def pubkey_to_script2(pubkey):
 def pubkey_hash_to_script2(pubkey_hash, version, bech32_version, net):
     if version == -1 and bech32_version >= 0:
         decoded = '{:x}'.format(pubkey_hash)
+        ehash = binascii.unhexlify(decoded)
         size = '{:x}'.format(len(decoded) // 2)
         if len(size) % 2 == 1:
             size = '0%s' % size
@@ -422,9 +423,16 @@ def pubkey_hash_to_script2(pubkey_hash, version, bech32_version, net):
         if net.SYMBOL.lower() in ['bch', 'tbch']:
             # CashAddrs can be longer than 20 bytes
             # TODO: Check the version and restrict the bytes.
-            return '\x76\xa9%s%s\x88\xac' % (hsize, pack.IntType(int(size, 16) * 8).pack(pubkey_hash))
+            if bech32_version == 0:
+                # P2KH
+                return '\x76\xa9%s%s\x88\xac' % (hsize, ehash)
+            elif bech32_version == 1:
+                # P2SH
+                return '\xa9%s%s\x87' % (hsize, ehash)
+            else:
+                raise NotImplementedError("Invalid cashaddr type %d" % bech32_version)
         else:
-            return '\x00%s%s' % (hsize, binascii.unhexlify(decoded))
+            return '\x00%s%s' % (hsize, ehash)
     if version == net.ADDRESS_P2SH_VERSION:
         return ('\xa9\x14' + pack.IntType(160).pack(pubkey_hash)) + '\x87'
     return '\x76\xa9' + ('\x14' + pack.IntType(160).pack(pubkey_hash)) + '\x88\xac'
@@ -434,7 +442,8 @@ def script2_to_address(script2, addr_ver, bech32_ver, net):
         return script2_to_pubkey_address(script2, net)
     except AddrError:
         pass
-    for func in script2_to_pubkey_hash_address, script2_to_bech32_address, script2_to_p2sh_address:
+    for func in [script2_to_pubkey_hash_address, script2_to_bech32_address,
+                 script2_to_p2sh_address, script2_to_cashaddress]:
         try:
             return func(script2, addr_ver, bech32_ver, net)
         except AddrError:
@@ -461,6 +470,22 @@ def script2_to_pubkey_hash_address(script2, addr_ver, bech32_ver, net):
     except Exception as e:
         raise AddrError
     return pubkey_hash_to_address(pubkey_hash, addr_ver, bech32_ver, net)
+
+def script2_to_cashaddress(script2, addr_ver, ca_ver, net):
+    try:
+        if ca_ver == 0:
+            sub_hash = script2[3:-2]
+        elif ca_ver == 1:
+            sub_hash = script2[2:-1]
+        else:
+            raise ValueError
+        pubkey_hash = int(sub_hash.encode('hex'), 16)
+        res = pubkey_hash_to_script2(pubkey_hash, addr_ver, ca_ver, net)
+        if res != script2:
+            raise ValueError
+    except Exception as e:
+        raise AddrError
+    return pubkey_hash_to_address(pubkey_hash, addr_ver, ca_ver, net)
 
 def script2_to_bech32_address(script2, addr_ver, bech32_ver, net):
     try:
