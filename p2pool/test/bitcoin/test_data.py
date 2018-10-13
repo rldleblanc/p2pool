@@ -309,22 +309,29 @@ class UnitTests(unittest.TestCase):
         self.assertEqual(bech32_out, data.pubkey_hash_to_script2(phash, -1, 2,
                                                                  self.ltcnet))
         self.assertEqual(0, mp.IntType().pack.call_count)
+        # Cashaddr test version 0 (P2KH)
         cashaddr_out = '\x76\xa9\x04\xde\xad\xbe\xef\x88\xac'
         mp.reset_mock()
+        self.assertEqual(cashaddr_out, data.pubkey_hash_to_script2(phash, -1, 0,
+                                                                   self.bchnet))
+        self.assertEqual(0, mp.IntType().pack.call_count)
+        # Cashaddr test version 1 (P2SH)
+        cashaddr_out = '\xa9\x04\xde\xad\xbe\xef\x87'
         self.assertEqual(cashaddr_out, data.pubkey_hash_to_script2(phash, -1, 1,
                                                                    self.bchnet))
-        mp.IntType.assert_called_once_with(32)
-        mp.IntType().pack.assert_called_once_with(phash)
-
+        for i in range(2, 16):
+            self.assertRaises(NotImplementedError, data.pubkey_hash_to_script2,
+                              phash, -1, i, self.bchnet)
         # Max cashaddr hash size.
         phash2 = int('deadbeef' * 16, 16)
         mp.IntType().pack.return_value = '\xde\xad\xbe\xef' * 16
         mp.reset_mock()
         cashaddr_out2 = '\x76\xa9\x40%s\x88\xac' % ('\xde\xad\xbe\xef' * 16)
-        self.assertEqual(cashaddr_out2, data.pubkey_hash_to_script2(phash2, -1, 5,
+        self.assertEqual(cashaddr_out2, data.pubkey_hash_to_script2(phash2, -1, 0,
                                                                     self.bchnet))
-        mp.IntType.assert_called_once_with(512)
-        mp.IntType().pack.assert_called_once_with(phash2)
+        cashaddr_out2 = '\xa9\x40%s\x87' % ('\xde\xad\xbe\xef' * 16)
+        self.assertEqual(cashaddr_out2, data.pubkey_hash_to_script2(phash2, -1, 1,
+                                                                    self.bchnet))
 
     @mock.patch.object(data, 'script2_to_pubkey_address',
                        spec=data.script2_to_pubkey_address)
@@ -332,13 +339,17 @@ class UnitTests(unittest.TestCase):
                        spec=data.script2_to_pubkey_hash_address)
     @mock.patch.object(data, 'script2_to_bech32_address',
                        spec=data.script2_to_bech32_address)
+    @mock.patch.object(data, 'script2_to_cashaddress',
+                       spec=data.script2_to_cashaddress)
     @mock.patch.object(data, 'script2_to_p2sh_address',
                        spec=data.script2_to_p2sh_address)
-    def test_script2_to_address(self, mstpa, mstba, mstpha, mstpka):
+    def test_script2_to_address(self, mstpa, mstca, mstba, mstpha, mstpka):
         mstpa.side_effect = data.AddrError
         mstpa.return_value = 'P2SH'
         mstba.side_effect = data.AddrError
         mstba.return_value = 'Bech32'
+        mstca.side_effect = data.AddrError
+        mstca.return_value = 'CashAddr'
         mstpha.side_effect = data.AddrError
         mstpha.return_value = 'Hash'
         mstpka.side_effect = data.AddrError
@@ -346,6 +357,7 @@ class UnitTests(unittest.TestCase):
         self.assertRaises(ValueError, data.script2_to_address, 'foobar', 1, -1,
                           self.btcnet)
         mstpa.assert_called_once_with('foobar', 1, -1, self.btcnet)
+        mstca.assert_called_once_with('foobar', 1, -1, self.btcnet)
         mstba.assert_called_once_with('foobar', 1, -1, self.btcnet)
         mstpha.assert_called_once_with('foobar', 1, -1, self.btcnet)
         mstpka.assert_called_once_with('foobar', self.btcnet)
@@ -364,6 +376,10 @@ class UnitTests(unittest.TestCase):
         mstpa.side_effect = None
         self.assertEqual('P2SH', data.script2_to_address('foobar', 1, -1,
                                                           self.btcnet))
+        mstpa.side_effect = data.AddrError
+        mstca.side_effect = None
+        self.assertEqual('CashAddr', data.script2_to_address('foobar', -1, 0,
+                                                             self.btcnet))
 
     @mock.patch.object(data, 'pubkey_to_script2', spec=data.pubkey_to_script2)
     @mock.patch.object(data, 'pubkey_to_address', spec=data.pubkey_to_address)
@@ -408,6 +424,34 @@ class UnitTests(unittest.TestCase):
         self.assertEqual('moobar',
                          data.script2_to_pubkey_hash_address('foo', 1, -1,
                                                              self.btcnet))
+
+    @mock.patch.object(data, 'pubkey_hash_to_script2',
+                       spec=data.pubkey_hash_to_script2)
+    @mock.patch.object(data, 'pubkey_hash_to_address',
+                       spec=data.pubkey_hash_to_address)
+    def test_script2_to_cashaddress(self, mphta, mphts):
+        phash = '\xde\xad\xbe\xef' * 2
+        for i in range(2, 16):
+            self.assertRaises(data.AddrError, data.script2_to_cashaddress,
+                              phash, -1, i, self.bchnet)
+            self.assertEqual(0, mphts.call_count)
+        mphts.side_effect = ValueError
+        self.assertRaises(data.AddrError, data.script2_to_cashaddress,
+                          phash, -1, 0, self.bchnet)
+        mphts.reset_mock()
+        mphts.side_effect = None
+        mphts.return_value = 'bar'
+        self.assertRaises(data.AddrError, data.script2_to_cashaddress,
+                          phash, -1, 0, self.bchnet)
+        mphts.assert_called_once_with(15720109, -1, 0, self.bchnet)
+        mphts.return_value = phash
+        mphta.return_value = 'foobar'
+        self.assertEqual('foobar', data.script2_to_cashaddress(phash, -1, 0,
+                                                               self.bchnet))
+        mphts.reset_mock()
+        self.assertEqual('foobar', data.script2_to_cashaddress(phash, -1, 1,
+                                                               self.bchnet))
+        mphts.assert_called_once_with(820068134334, -1, 1, self.bchnet)
 
     @mock.patch.object(data, 'pubkey_hash_to_script2',
                        spec=data.pubkey_hash_to_script2)
