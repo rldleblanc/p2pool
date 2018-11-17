@@ -65,6 +65,13 @@ def is_segwit_activated(version, net):
     return version >= segwit_activation_version and segwit_activation_version > 0
 
 DONATION_SCRIPT = '4104ffd03de44a6e11b9917f3a29f9443283d9871c9d743ef30d5eddcd37094b64d1b3d8090496b53256786bf5c82932ec23c3b74d9f05a6f95a8b5529352656664bac'.decode('hex')
+def donation_script_to_address(net):
+    try:
+        return bitcoin_data.script2_to_address(
+                DONATION_SCRIPT, net.PARENT.ADDRESS_VERSION, -1, net.PARENT)
+    except ValueError:
+        return bitcoin_data.script2_to_address(
+                DONATION_SCRIPT, net.PARENT.ADDRESS_P2SH_VERSION, -1, net.PARENT)
 
 class BaseShare(object):
     VERSION = 0
@@ -252,8 +259,7 @@ class BaseShare(object):
                     -1, net.PARENT)
         else:
             this_address = share_data['address']
-        donation_address = bitcoin_data.script2_to_address(
-                DONATION_SCRIPT, net.PARENT.ADDRESS_VERSION, -1, net.PARENT)
+        donation_address = donation_script_to_address(net)
         # 0.5% goes to block finder
         amounts[this_address] = amounts.get(this_address, 0) \
                                 + share_data['subsidy']//200
@@ -887,8 +893,7 @@ def get_user_stale_props(tracker, share_hash, lookbehind):
 def get_expected_payouts(tracker, best_share_hash, block_target, subsidy, net):
     weights, total_weight, donation_weight = tracker.get_cumulative_weights(best_share_hash, min(tracker.get_height(best_share_hash), net.REAL_CHAIN_LENGTH), 65535*net.SPREAD*bitcoin_data.target_to_average_attempts(block_target))
     res = dict((script, subsidy*weight//total_weight) for script, weight in weights.iteritems())
-    donation_addr = bitcoin_data.script2_to_address(
-            DONATION_SCRIPT, net.PARENT.ADDRESS_VERSION, -1, net.PARENT)
+    donation_addr = donation_script_to_address(net)
     res[donation_addr] = res.get(donation_addr, 0) + subsidy - sum(res.itervalues())
     return res
 
