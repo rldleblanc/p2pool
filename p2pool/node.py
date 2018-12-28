@@ -270,7 +270,7 @@ class Node(object):
             if not (share.pow_hash <= share.header['bits'].target):
                 return
             
-            if self.cur_share_ver >= 34:
+            if share.VERSION >= 34:
                 return
             block = share.as_block(self.tracker, self.known_txs_var.value)
             if block is None:
