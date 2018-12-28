@@ -161,9 +161,11 @@ def submit_block_rpc(block, ignore_failure, bitcoind, bitcoind_work, net):
     if (not success and success_expected and not ignore_failure) or (success and not success_expected):
         print >>sys.stderr, 'Block submittal result: %s (%r) Expected: %s' % (success, result, success_expected)
 
-def submit_block(block, ignore_failure, factory, bitcoind, bitcoind_work, net):
-    submit_block_p2p(block, factory, net)
-    submit_block_rpc(block, ignore_failure, bitcoind, bitcoind_work, net)
+def submit_block(block, ignore_failure, node):
+    if node.cur_share_ver < 34:
+        submit_block_p2p(block, node.factory, node.net)
+    submit_block_rpc(block, ignore_failure, node.bitcoind, node.bitcoind_work,
+                     node.net)
 
 @defer.inlineCallbacks
 def check_block_header(bitcoind, block_hash):

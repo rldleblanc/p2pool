@@ -123,6 +123,7 @@ class WorkerBridge(worker_interface.WorkerBridge):
         compute_work()
         
         self.new_work_event = variable.Event()
+
         @self.current_work.transitioned.watch
         def _(before, after):
             # trigger LP if version/previous_block/bits changed or transactions changed from nothing
@@ -426,7 +427,7 @@ class WorkerBridge(worker_interface.WorkerBridge):
             pow_hash = self.node.net.PARENT.POW_FUNC(bitcoin_data.block_header_type.pack(header))
             try:
                 if pow_hash <= header['bits'].target or p2pool.DEBUG:
-                    helper.submit_block(dict(header=header, txs=[new_gentx] + other_transactions), False, self.node.factory, self.node.bitcoind, self.node.bitcoind_work, self.node.net)
+                    helper.submit_block(dict(header=header, txs=[new_gentx] + other_transactions), False, self.node)
                     if pow_hash <= header['bits'].target:
                         print
                         print 'GOT BLOCK FROM MINER! Passing to bitcoind! %s%064x' % (self.node.net.PARENT.BLOCK_EXPLORER_URL_PREFIX, header_hash)
@@ -480,15 +481,16 @@ class WorkerBridge(worker_interface.WorkerBridge):
                     ' DEAD ON ARRIVAL' if not on_time else '',
                 )
 
-                # node.py will sometimes forget transactions if bitcoind's work has changed since this stratum
-                # job was assigned. Fortunately, the tx_map is still in in our scope from this job, so we can use that
-                # to refill it if needed.
+                if self.node.cur_share_ver < 34:
+                    # node.py will sometimes forget transactions if bitcoind's work has changed since this stratum
+                    # job was assigned. Fortunately, the tx_map is still in in our scope from this job, so we can use that
+                    # to refill it if needed.
 
-                known_txs = self.node.known_txs_var.value
-                missing = {hsh:val for (hsh, val) in tx_map.iteritems() if not hsh in known_txs}
-                if missing:
-                    print "Warning: %i transactions were erroneously evicted from known_txs_var. Refilling now." % len(missing)
-                    self.node.known_txs_var.add(missing)
+                    known_txs = self.node.known_txs_var.value
+                    missing = {hsh:val for (hsh, val) in tx_map.iteritems() if not hsh in known_txs}
+                    if missing:
+                        print "Warning: %i transactions were erroneously evicted from known_txs_var. Refilling now." % len(missing)
+                        self.node.known_txs_var.add(missing)
 
                 self.my_share_hashes.add(share.hash)
                 if not on_time:

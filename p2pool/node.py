@@ -160,7 +160,7 @@ class Node(object):
         self.factory = factory
         self.bitcoind = bitcoind
         self.net = net
-        
+        self.cur_share_ver = None
 
         self.known_txs_var = variable.VariableDict({}) # hash -> tx
         self.mining_txs_var = variable.Variable({}) # hash -> tx
@@ -192,6 +192,7 @@ class Node(object):
         # BITCOIND WORK
         
         self.bitcoind_work = variable.Variable((yield helper.getwork(self.bitcoind)))
+
         @defer.inlineCallbacks
         def work_poller():
             while stop_signal.times == 0:
@@ -222,6 +223,7 @@ class Node(object):
                 )): # new is current and previous is not a child of current
                 self.best_block_header.set(new_header)
         self.handle_header = handle_header
+
         @defer.inlineCallbacks
         def poll_header():
             if self.factory.conn.value is None:
@@ -251,30 +253,37 @@ class Node(object):
             self.known_txs_var.add({
                 bitcoin_data.hash256(bitcoin_data.tx_type.pack(tx)): tx,
             })
-        # forward transactions seen to bitcoind
-        @self.known_txs_var.transitioned.watch
-        @defer.inlineCallbacks
-        def _(before, after):
-            yield deferral.sleep(random.expovariate(1/1))
-            if self.factory.conn.value is None:
-                return
-            for tx_hash in set(after) - set(before):
-                self.factory.conn.value.send_tx(tx=after[tx_hash])
+
+        if self.cur_share_ver < 34:
+            # forward transactions seen to bitcoind
+            @self.known_txs_var.transitioned.watch
+            @defer.inlineCallbacks
+            def _(before, after):
+                yield deferral.sleep(random.expovariate(1/1))
+                if self.factory.conn.value is None:
+                    return
+                for tx_hash in set(after) - set(before):
+                    self.factory.conn.value.send_tx(tx=after[tx_hash])
         
         @self.tracker.verified.added.watch
         def _(share):
             if not (share.pow_hash <= share.header['bits'].target):
                 return
             
+            if self.cur_share_ver >= 34:
+                return
             block = share.as_block(self.tracker, self.known_txs_var.value)
             if block is None:
                 print >>sys.stderr, 'GOT INCOMPLETE BLOCK FROM PEER! %s bitcoin: %s%064x' % (p2pool_data.format_hash(share.hash), self.net.PARENT.BLOCK_EXPLORER_URL_PREFIX, share.header_hash)
                 return
-            helper.submit_block(block, True, self.factory, self.bitcoind, self.bitcoind_work, self.net)
+            helper.submit_block(block, True, self)
             print
             print 'GOT BLOCK FROM PEER! Passing to bitcoind! %s bitcoin: %s%064x' % (p2pool_data.format_hash(share.hash), self.net.PARENT.BLOCK_EXPLORER_URL_PREFIX, share.header_hash)
             print
         
+        #TODO: Need to clear old_txs on each new block
+        print("Num txs in cache: %s" % len(self.known_txs_var.value))
+
         def forget_old_txs():
             new_known_txs = {}
             if self.p2p_node is not None:
@@ -283,13 +292,16 @@ class Node(object):
             new_known_txs.update(self.mining_txs_var.value)
             new_known_txs.update(self.mining2_txs_var.value)
             for share in self.tracker.get_chain(self.best_share_var.value, min(120, self.tracker.get_height(self.best_share_var.value))):
+                if share.VERSION >= 34:
+                    continue
                 for tx_hash in share.new_transaction_hashes:
                     if tx_hash in self.known_txs_var.value:
                         new_known_txs[tx_hash] = self.known_txs_var.value[tx_hash]
             self.known_txs_var.set(new_known_txs)
-        t = deferral.RobustLoopingCall(forget_old_txs)
-        t.start(10)
-        stop_signal.watch(t.stop)
+        if self.cur_share_ver < 34:
+            t = deferral.RobustLoopingCall(forget_old_txs)
+            t.start(10)
+            stop_signal.watch(t.stop)
         
         t = deferral.RobustLoopingCall(self.clean_tracker)
         t.start(5)
@@ -303,6 +315,10 @@ class Node(object):
 
         self.best_share_var.set(best)
         self.desired_var.set(desired)
+        try:
+            self.cur_share_ver = self.tracker.items[best].VERSION
+        except KeyError:
+            self.cur_share_ver = p2pool_data.BaseShare.VERSION
         if self.p2p_node is not None:
             for bad_peer_address in bad_peer_addresses:
                 # XXX O(n)
