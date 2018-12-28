@@ -879,15 +879,22 @@ def get_stale_counts(tracker, share_hash, lookbehind, rates=False):
         res = dict((k, v/dt) for k, v in res.iteritems())
     return res
 
-def get_user_stale_props(tracker, share_hash, lookbehind):
+def get_user_stale_props(tracker, share_hash, lookbehind, net):
     res = {}
     for share in tracker.get_chain(share_hash, lookbehind - 1):
-        stale, total = res.get(share.share_data['pubkey_hash'], (0, 0))
+        if share.VERSION < 34:
+            stale, total = res.get(share.share_data['pubkey_hash'], (0, 0))
+            key = bitcoin_data.pubkey_hash_to_address(
+                    share.share_data['pubkey_hash'], net.ADDRESS_VERSION, -1,
+                    net)
+        else:
+            key = share.share_data['address']
+            stale, total = res.get(key, (0, 0))
         total += 1
         if share.share_data['stale_info'] is not None:
             stale += 1
             total += 1
-        res[share.share_data['pubkey_hash']] = stale, total
+        res[key] = stale, total
     return dict((pubkey_hash, stale/total) for pubkey_hash, (stale, total) in res.iteritems())
 
 def get_expected_payouts(tracker, best_share_hash, block_target, subsidy, net):
