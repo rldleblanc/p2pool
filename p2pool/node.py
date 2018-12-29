@@ -271,6 +271,10 @@ class Node(object):
                 return
             
             if share.VERSION >= 34:
+                print 'GOT BLOCK FROM PEER! %s %s%064x' % (
+                        p2pool_data.format_hash(share.hash),
+                        self.net.PARENT.BLOCK_EXPLORER_URL_PREFIX,
+                        share.header_hash)
                 return
             block = share.as_block(self.tracker, self.known_txs_var.value)
             if block is None:
