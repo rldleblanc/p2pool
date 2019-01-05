@@ -183,7 +183,18 @@ class Node(object):
                 self.tracker.verified.add(self.tracker.items[share_hash])
         
         self.p2p_node = None # overwritten externally
-    
+
+    def check_and_purge_txs(self):
+        if self.cur_share_ver < 34:
+            return
+        best_share = self.tracker.items.get(
+                self.best_share_var.value, None)
+        if not best_share:
+            return
+        prev_block = best_share.header['previous_block']
+        if prev_block != self.bitcoind_work.value['previous_block']:
+            self.known_txs_var.set({})
+
     @defer.inlineCallbacks
     def start(self):
         stop_signal = variable.Event()
@@ -199,6 +210,7 @@ class Node(object):
                 flag = self.factory.new_block.get_deferred()
                 try:
                     self.bitcoind_work.set((yield helper.getwork(self.bitcoind, self.bitcoind_work.value['use_getblocktemplate'], self.txidcache, self.feecache, self.feefifo, self.known_txs_var.value)))
+                    self.check_and_purge_txs()
                 except:
                     log.err()
                 yield defer.DeferredList([flag, deferral.sleep(15)], fireOnOneCallback=True)
@@ -284,9 +296,6 @@ class Node(object):
             print
             print 'GOT BLOCK FROM PEER! Passing to bitcoind! %s bitcoin: %s%064x' % (p2pool_data.format_hash(share.hash), self.net.PARENT.BLOCK_EXPLORER_URL_PREFIX, share.header_hash)
             print
-        
-        #TODO: Need to clear old_txs on each new block
-        print("Num txs in cache: %s" % len(self.known_txs_var.value))
 
         def forget_old_txs():
             new_known_txs = {}
