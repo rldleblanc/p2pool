@@ -7,9 +7,25 @@ import binascii
 
 import p2pool
 from p2pool.util import math, pack, segwit_addr, cash_addr
+import struct
+
+mask = (1<<64) - 1
 
 def hash256(data):
     return pack.IntType(256).unpack(hashlib.sha256(hashlib.sha256(data).digest()).digest())
+
+def pack256(data):
+    if data is None:
+        data = 0
+    return struct.pack("<QQQQ", data & mask, data>>64 & mask, data>>128 & mask,
+                        data>>192 & mask)
+
+def unpack256(data):
+    raw = struct.unpack("<QQQQ", data)
+    return (raw[3]<<192) + (raw[2]<<128) + (raw[1]<<64) + raw[0]
+
+def hash256d(data):
+    return hashlib.sha256(hashlib.sha256(data).digest()).digest()
 
 def hash160(data):
     if data == '04ffd03de44a6e11b9917f3a29f9443283d9871c9d743ef30d5eddcd37094b64d1b3d8090496b53256786bf5c82932ec23c3b74d9f05a6f95a8b5529352656664b'.decode('hex'):
@@ -236,6 +252,46 @@ merkle_record_type = pack.ComposedType([
     ('right', pack.IntType(256)),
 ])
 
+class MerkleNode(object):
+    """Class for building a merkle tree."""
+
+    __slots__ = ('hash', 'parent', 'left', 'right')
+
+    def __init__(self, hash, left=None, right=None, parent=None):
+        if hash is None:
+            self.hash = '0'
+        else:
+            self.hash = hash
+        self.left = left
+        self.right = right
+        self.parent = parent
+
+    def get_sibling(self):
+        """Get the hash's sibling.
+
+        Args:
+            None
+
+        Returns:
+            The sibling MerkleNode of hash.
+        """
+        if not self.parent:
+            raise ValueError("There is no sibling of this node.")
+        if self == self.parent.left:
+            return self.parent.right
+        return self.parent.left
+
+    def __hash__(self):
+        return self.hash
+
+    def __str__(self, level=0):
+        ret = "%s%s\n" % ('\t'*level, self.hash)
+        if self.left:
+            ret += self.left.__str__(level=level+1)
+        if self.right:
+            ret += self.right.__str__(level=level+1)
+        return ret
+
 def merkle_hash(hashes):
     if not hashes:
         return 0
@@ -245,32 +301,45 @@ def merkle_hash(hashes):
             for left, right in zip(hash_list[::2], hash_list[1::2] + [hash_list[::2][-1]])]
     return hash_list[0]
 
+def build_merkle_tree(nodes):
+    """Build a merkle tree from a list of hashes
+
+    Args:
+        nodes: A list of merkle nodes already part of the tree.
+
+    Returns:
+        The root merkle node.
+    """
+    if len(nodes) < 1:
+        raise ValueError("No nodes in list to build a merkle tree with.")
+    if len(nodes) == 1:
+        return nodes[0]
+    new_nodes = []
+    for i in range(0, len(nodes), 2):
+        try:
+            right = nodes[i+1]
+        except IndexError:
+            right = nodes[i]
+        new_node = MerkleNode(hash=hash256d(nodes[i].hash + right.hash),
+                              left=nodes[i], right=right)
+        nodes[i].parent = new_node
+        try:
+            nodes[i+1].parent = new_node
+        except IndexError:
+            pass
+        new_nodes.append(new_node)
+    return build_merkle_tree(new_nodes)
+
 def calculate_merkle_link(hashes, index):
-    # XXX optimize this
-    
-    hash_list = [(lambda _h=h: _h, i == index, []) for i, h in enumerate(hashes)]
-    
-    while len(hash_list) > 1:
-        hash_list = [
-            (
-                lambda _left=left, _right=right: hash256(merkle_record_type.pack(dict(left=_left(), right=_right()))),
-                left_f or right_f,
-                (left_l if left_f else right_l) + [dict(side=1, hash=right) if left_f else dict(side=0, hash=left)],
-            )
-            for (left, left_f, left_l), (right, right_f, right_l) in
-                zip(hash_list[::2], hash_list[1::2] + [hash_list[::2][-1]])
-        ]
-    
-    res = [x['hash']() for x in hash_list[0][2]]
-    
-    assert hash_list[0][1]
-    if p2pool.DEBUG:
-        new_hashes = [random.randrange(2**256) if x is None else x
-            for x in hashes]
-        assert check_merkle_link(new_hashes[index], dict(branch=res, index=index)) == merkle_hash(new_hashes)
-    assert index == sum(k*2**i for i, k in enumerate([1-x['side'] for x in hash_list[0][2]]))
-    
-    return dict(branch=res, index=index)
+    assert index < len(hashes)
+    merkle_nodes = [MerkleNode(pack256(x)) for x in hashes]
+    merkle_tree = build_merkle_tree(merkle_nodes)
+    merkle_branch = []
+    index_node = merkle_nodes[index]
+    while index_node.parent:
+        merkle_branch.append(unpack256(index_node.get_sibling().hash))
+        index_node = index_node.parent
+    return {'index': index, 'branch': merkle_branch}
 
 def check_merkle_link(tip_hash, link):
     if link['index'] >= 2**len(link['branch']):
