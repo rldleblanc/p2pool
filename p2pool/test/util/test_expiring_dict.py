@@ -12,7 +12,7 @@ class Test(unittest.TestCase):
         assert 1 in e
         yield deferral.sleep(3)
         assert 1 not in e
-    
+
     @defer.inlineCallbacks
     def test_expiring_dict2(self):
         e = expiring_dict.ExpiringDict(3, get_touches=True)
@@ -21,7 +21,7 @@ class Test(unittest.TestCase):
         e[1]
         yield deferral.sleep(2.25)
         assert 1 in e
-    
+
     @defer.inlineCallbacks
     def test_expiring_dict3(self):
         e = expiring_dict.ExpiringDict(3, get_touches=False)

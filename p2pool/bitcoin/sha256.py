@@ -1,7 +1,5 @@
-from __future__ import division
-
+import binascii
 import struct
-
 
 k = [
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -17,59 +15,74 @@ k = [
 def process(state, chunk):
     def rightrotate(x, n):
         return (x >> n) | (x << 32 - n) % 2**32
-    
+
     w = list(struct.unpack('>16I', chunk))
-    for i in xrange(16, 64):
+    for i in range(16, 64):
         s0 = rightrotate(w[i-15], 7) ^ rightrotate(w[i-15], 18) ^ (w[i-15] >> 3)
         s1 = rightrotate(w[i-2], 17) ^ rightrotate(w[i-2], 19) ^ (w[i-2] >> 10)
         w.append((w[i-16] + s0 + w[i-7] + s1) % 2**32)
-    
+
     a, b, c, d, e, f, g, h = start_state = struct.unpack('>8I', state)
     for k_i, w_i in zip(k, w):
-        t1 = (h + (rightrotate(e, 6) ^ rightrotate(e, 11) ^ rightrotate(e, 25)) + ((e & f) ^ (~e & g)) + k_i + w_i) % 2**32
-        
+        t1 = (h + (rightrotate(e, 6) ^ rightrotate(e, 11) ^ rightrotate(e, 25)) +
+                ((e & f) ^ (~e & g)) + k_i + w_i) % 2**32
+
         a, b, c, d, e, f, g, h = (
-            (t1 + (rightrotate(a, 2) ^ rightrotate(a, 13) ^ rightrotate(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) % 2**32,
+            (t1 + (rightrotate(a, 2) ^ rightrotate(a, 13) ^ rightrotate(a, 22)) +
+                ((a & b) ^ (a & c) ^ (b & c))) % 2**32,
             a, b, c, (d + t1) % 2**32, e, f, g,
         )
-    
-    return struct.pack('>8I', *((x + y) % 2**32 for x, y in zip(start_state, [a, b, c, d, e, f, g, h])))
 
+    return struct.pack('>8I', *((x + y) % 2**32 for x, y in zip(
+        start_state, [a, b, c, d, e, f, g, h])))
 
-initial_state = struct.pack('>8I', 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19)
+initial_state = struct.pack('>8I', 0x6a09e667, 0xbb67ae85, 0x3c6ef372,
+        0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19)
 
 class sha256(object):
-    digest_size = 256//8
-    block_size = 512//8
-    
-    def __init__(self, data='', _=(initial_state, '', 0)):
+
+    __slots__ = ('state', 'buf', 'length')
+
+    digest_size = 256 // 8
+    block_size = 512 // 8
+
+    def __init__(self, data='', _=(initial_state, b'', 0)):
         self.state, self.buf, self.length = _
         self.update(data)
-    
+
     def update(self, data):
+        if not isinstance(data, (bytes, bytearray)):
+            raise ValueError("Update data must be a string of bytes() or bytearray.")
         state = self.state
         buf = self.buf + data
-        
-        chunks = [buf[i:i + self.block_size] for i in xrange(0, len(buf) + 1, self.block_size)]
+
+        chunks = [buf[i:i + self.block_size] for
+                i in range(0, len(buf) + 1, self.block_size)]
         for chunk in chunks[:-1]:
             state = process(state, chunk)
-        
+
         self.state = state
         self.buf = chunks[-1]
-        
-        self.length += 8*len(data)
-    
-    def copy(self, data=''):
+
+        self.length += 8 * len(data)
+
+    def copy(self, data=b''):
+        if not isinstance(data, (bytes, bytearray)):
+            raise ValueError("Copy data must be a string of bytes() or bytearray.")
         return self.__class__(data, (self.state, self.buf, self.length))
-    
+
     def digest(self):
         state = self.state
-        buf = self.buf + '\x80' + '\x00'*((self.block_size - 9 - len(self.buf)) % self.block_size) + struct.pack('>Q', self.length)
-        
-        for chunk in [buf[i:i + self.block_size] for i in xrange(0, len(buf), self.block_size)]:
+        tmp = (self.block_size - 9 - len(self.buf)) % self.block_size
+        buf = self.buf + b'\x80' + b'\x00' * (
+                (self.block_size - 9 - len(self.buf)) % self.block_size) + \
+                        struct.pack('>Q', self.length)
+
+        for chunk in [buf[i:i + self.block_size] for
+                i in range(0, len(buf), self.block_size)]:
             state = process(state, chunk)
-        
+
         return state
-    
+
     def hexdigest(self):
-        return self.digest().encode('hex')
+        return binascii.hexlify(self.digest())

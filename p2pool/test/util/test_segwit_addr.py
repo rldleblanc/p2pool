@@ -19,12 +19,11 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-import unittest
-import mock
+from unittest import TestCase, mock
 
 from p2pool.util import segwit_addr
 
-class UnitTest(unittest.TestCase):
+class UnitTest(TestCase):
 
     def setUp(self):
         self.longMessage = True
@@ -47,8 +46,8 @@ class UnitTest(unittest.TestCase):
             self.assertEqual(r, segwit_addr.bech32_polymod(d))
 
     def test_bech32_hrp_expand(self):
-        data = [('bc', [3, 3, 0, 2, 3]),
-                ('tltc', [3, 3, 3, 3, 0, 20, 12, 20, 3]),
+        data = [(b'bc', [3, 3, 0, 2, 3]),
+                (b'tltc', [3, 3, 3, 3, 0, 20, 12, 20, 3]),
                ]
         for d, r in data:
             self.assertEqual(r, segwit_addr.bech32_hrp_expand(d),
@@ -103,16 +102,16 @@ class UnitTest(unittest.TestCase):
     @mock.patch.object(segwit_addr, 'bech32_create_checksum',
                        spec=segwit_addr.bech32_create_checksum)
     def test_bech32_encode(self, mbcc):
-        data = [('bc', [0, 14, 20, 15, 7, 13, 26, 0, 25, 18, 6, 11, 13, 8, 21,
+        data = [(b'bc', [0, 14, 20, 15, 7, 13, 26, 0, 25, 18, 6, 11, 13, 8, 21,
                         4, 20, 3, 17, 2, 29, 3, 12, 29, 3, 4, 15, 24, 20, 6, 14,
                         30, 22],
                  [12, 7, 9, 17, 11, 21],
-                 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4'),
-                ('tltc', [0, 30, 18, 12, 16, 17, 29, 3, 7, 15, 6, 6, 25, 6, 25,
+                 b'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4'),
+                (b'tltc', [0, 30, 18, 12, 16, 17, 29, 3, 7, 15, 6, 6, 25, 6, 25,
                           13, 22, 3, 25, 23, 4, 29, 26, 9, 26, 18, 31, 0, 0, 27,
                           14, 13, 1],
                  [14, 7, 1, 6, 3, 0],
-                 'tltc1q7jvs3ar80xxexedkrehya6f6jlqqmwdpw8pxrq'),
+                 b'tltc1q7jvs3ar80xxexedkrehya6f6jlqqmwdpw8pxrq'),
                ]
         for h, d, c, r in data:
             mbcc.reset_mock()
@@ -125,37 +124,39 @@ class UnitTest(unittest.TestCase):
     def test_bech32_decode(self, mvc):
         # Test non-numeric and non-alpha range
         for i in range(33):
-            self.assertTupleEqual((None, None), segwit_addr.bech32_decode(chr(i)))
+            self.assertTupleEqual((None, None), segwit_addr.bech32_decode(
+                bytes([i])))
         for i in range(127, 256):
-            self.assertTupleEqual((None, None), segwit_addr.bech32_decode(chr(i)))
+            self.assertTupleEqual((None, None), segwit_addr.bech32_decode(
+                bytes([i])))
         # Test mixed case
-        self.assertTupleEqual((None, None), segwit_addr.bech32_decode('abcDef'))
+        self.assertTupleEqual((None, None), segwit_addr.bech32_decode(b'abcDef'))
         # Test missing HRP
-        self.assertTupleEqual((None, None), segwit_addr.bech32_decode('abcdef'))
+        self.assertTupleEqual((None, None), segwit_addr.bech32_decode(b'abcdef'))
         # Test address too short
-        self.assertTupleEqual((None, None), segwit_addr.bech32_decode('bc1ab'))
+        self.assertTupleEqual((None, None), segwit_addr.bech32_decode(b'bc1ab'))
         # Test address too long
-        addr = 'bc1acdefghjklmnpqrstuvwxyz234567890acdefghjklmnpqrstuvwxyz234567890acdefghjklmnpqrstuvwxyz2'
+        addr = b'bc1acdefghjklmnpqrstuvwxyz234567890acdefghjklmnpqrstuvwxyz234567890acdefghjklmnpqrstuvwxyz2'
         self.assertTupleEqual((None, None), segwit_addr.bech32_decode(addr))
         # Test illegal characters
-        addr = 'bc1bcdefghjklm'
+        addr = b'bc1bcdefghjklm'
         self.assertTupleEqual((None, None), segwit_addr.bech32_decode(addr))
-        addr = 'bc1acdefghijklm'
+        addr = b'bc1acdefghijklm'
         self.assertTupleEqual((None, None), segwit_addr.bech32_decode(addr))
-        addr = 'bc1acdefghijklm1'
+        addr = b'bc1acdefghijklm1'
         self.assertTupleEqual((None, None), segwit_addr.bech32_decode(addr))
         # Check that bech32_verify_checksum hasn't been called.
         self.assertEqual(0, mvc.call_count)
         # Test that the checksum failed
         mvc.return_value = 0
-        addr = 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4'
+        addr = b'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4'
         data = [0, 14, 20, 15, 7, 13, 26, 0, 25, 18, 6, 11, 13, 8, 21, 4, 20, 3,
                 17, 2, 29, 3, 12, 29, 3, 4, 15, 24, 20, 6, 14, 30, 22, 12, 7, 9,
                 17, 11, 21]
         self.assertTupleEqual((None, None), segwit_addr.bech32_decode(addr))
-        mvc.assert_called_once_with('bc', data)
+        mvc.assert_called_once_with(b'bc', data)
         mvc.return_value = 1
-        self.assertTupleEqual(('bc', data[:-6]), segwit_addr.bech32_decode(addr))
+        self.assertTupleEqual((b'bc', data[:-6]), segwit_addr.bech32_decode(addr))
 
     @mock.patch.object(segwit_addr, 'bech32_decode',
                        spec=segwit_addr.bech32_decode)
@@ -217,32 +218,32 @@ class UnitTest(unittest.TestCase):
         mbe.assert_called_once_with('ltc', [9, 'foo'])
         md.assert_called_once_with('ltc', 'bar')
 
-class IntegrationTest(unittest.TestCase):
+class IntegrationTest(TestCase):
     VALID_ADDRESS = [
-        ["BC1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T4",
+        [b"BC1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T4",
           "0014751e76e8199196d454941c45d1b3a323f1433bd6"],
-        ["tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sl5k7",
+        [b"tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sl5k7",
          "00201863143c14c5166804bd19203356da136c985678cd4d27a1b8c6329604903262"],
-        ["bc1pw508d6qejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5r3zarvary0c5xw7k7grplx",
+        [b"bc1pw508d6qejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5r3zarvary0c5xw7k7grplx",
          "5128751e76e8199196d454941c45d1b3a323f1433bd6751e76e8199196d454941c45d1b3a323f1433bd6"],
-        ["BC1SW50QA3JX3S", "6002751e"],
-        ["bc1zw508d6qejxtdg4y5r3zarvaryvg6kdaj",
+        [b"BC1SW50QA3JX3S", "6002751e"],
+        [b"bc1zw508d6qejxtdg4y5r3zarvaryvg6kdaj",
          "5210751e76e8199196d454941c45d1b3a323"],
-        ["tb1qqqqqp399et2xygdj5xreqhjjvcmzhxw4aywxecjdzew6hylgvsesrxh6hy",
+        [b"tb1qqqqqp399et2xygdj5xreqhjjvcmzhxw4aywxecjdzew6hylgvsesrxh6hy",
          "0020000000c4a5cad46221b2a187905e5266362b99d5e91c6ce24d165dab93e86433"],
     ]
-    
+
     INVALID_ADDRESS = [
-        "tc1qw508d6qejxtdg4y5r3zarvbry0c5xw7kg3g4ty",
-        "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t5",
-        "BC13W508D6QEJXTDG4Y5R3ZARVARY0C5XW7KN40WF2",
-        "bc1rw5uspcuh",
-        "bc10w508d6qejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5r3zarvary0c5xw7kw5rljs90",
-        "BC1QR508D6QEJXTDG4Y5R3ZARVARYV98GJ9P",
-        "tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sL5k7",
-        "bc1zw508d6qejxtdg4y5r3zarvaryvqyzf3du",
-        "tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3pjxtptv",
-        "bc1gmk9yu",
+        b"tc1qw508d6qejxtdg4y5r3zarvbry0c5xw7kg3g4ty",
+        b"bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t5",
+        b"BC13W508D6QEJXTDG4Y5R3ZARVARY0C5XW7KN40WF2",
+        b"bc1rw5uspcuh",
+        b"bc10w508d6qejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5r3zarvary0c5xw7kw5rljs90",
+        b"BC1QR508D6QEJXTDG4Y5R3ZARVARYV98GJ9P",
+        b"tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sL5k7",
+        b"bc1zw508d6qejxtdg4y5r3zarvaryvqyzf3du",
+        b"tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3pjxtptv",
+        b"bc1gmk9yu",
     ]
 
     def setUp(self):
@@ -250,7 +251,7 @@ class IntegrationTest(unittest.TestCase):
 
     @staticmethod
     def get_hrp(addr):
-        return ''.join(addr[:addr.find('1')]).lower()
+        return bytes(addr[:addr.find(b'1')]).lower()
 
     def test_valid_addresses(self):
         for addr, script in self.VALID_ADDRESS:

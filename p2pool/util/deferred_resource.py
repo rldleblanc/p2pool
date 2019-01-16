@@ -1,10 +1,11 @@
-from __future__ import division
-
 from twisted.internet import defer
 from twisted.web import resource, server
 from twisted.python import log
 
 class DeferredResource(resource.Resource):
+
+    __slots__ = ()
+
     def render(self, request):
         def finish(x):
             if request.channel is None: # disconnected
@@ -12,7 +13,7 @@ class DeferredResource(resource.Resource):
             if x is not None:
                 request.write(x)
             request.finish()
-        
+
         def finish_error(fail):
             if request.channel is None: # disconnected
                 return
@@ -20,6 +21,7 @@ class DeferredResource(resource.Resource):
             request.write('---ERROR---')
             request.finish()
             log.err(fail, "Error in DeferredResource handler:")
-        
-        defer.maybeDeferred(resource.Resource.render, self, request).addCallbacks(finish, finish_error)
+
+        defer.maybeDeferred(resource.Resource.render, self, request
+                ).addCallbacks(finish, finish_error)
         return server.NOT_DONE_YET

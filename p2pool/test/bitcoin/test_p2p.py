@@ -15,6 +15,7 @@ class Test(unittest.TestCase):
             block = yield deferral.retry()(defer.inlineCallbacks(lambda: defer.returnValue((yield (yield factory.getProtocol()).get_block(h)))))()
             assert data.merkle_hash(map(data.get_txid, block['txs'])) == block['header']['merkle_root']
             assert data.hash256(data.block_header_type.pack(block['header'])) == h
+            print("done testing")
         finally:
             factory.stopTrying()
             c.disconnect()

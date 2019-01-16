@@ -10,12 +10,12 @@ class NotSkipList(object):
                 raise AssertionError()
             elif decision == 0:
                 return self.finalize(sol)
-            
+
             delta = self.get_delta(pos)
             sol = self.apply_delta(sol, delta, args)
-            
+
             pos = self.previous(pos)
-    
+
     def finalize(self, sol):
         return sol
 

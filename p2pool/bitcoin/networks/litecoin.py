@@ -7,11 +7,11 @@ from .. import data, helper
 from p2pool.util import pack
 
 
-P2P_PREFIX = 'fbc0b6db'.decode('hex')
+P2P_PREFIX = bytes.fromhex('fbc0b6db')
 P2P_PORT = 9333
 ADDRESS_VERSION = 48
 ADDRESS_P2SH_VERSION = 50
-HUMAN_READABLE_PART = 'ltc'
+HUMAN_READABLE_PART = b'ltc'
 RPC_PORT = 9332
 RPC_CHECK = defer.inlineCallbacks(lambda bitcoind: defer.returnValue(
 #            'litecoin' in (yield bitcoind.rpc_help()) and # new versions have "litecoinprivkey" but no "litecoinaddress"

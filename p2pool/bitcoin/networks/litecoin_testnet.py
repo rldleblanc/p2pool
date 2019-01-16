@@ -7,11 +7,11 @@ from .. import data, helper
 from p2pool.util import pack
 
 
-P2P_PREFIX = 'fdd2c8f1'.decode('hex')
+P2P_PREFIX = bytes.fromhex('fdd2c8f1')
 P2P_PORT = 19335
 ADDRESS_VERSION = 111
 ADDRESS_P2SH_VERSION = 58
-HUMAN_READABLE_PART = 'tltc'
+HUMAN_READABLE_PART = b'tltc'
 RPC_PORT = 19332
 RPC_CHECK = defer.inlineCallbacks(lambda bitcoind: defer.returnValue(
             'getreceivedbyaddress' in (yield bitcoind.rpc_help()) and

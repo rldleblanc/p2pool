@@ -22,7 +22,7 @@ def _get_version():
             return check_output(['git.cmd', 'describe', '--always', '--dirty'], cwd=os.path.dirname(os.path.abspath(sys.argv[0]))).strip()
         except:
             pass
-        
+
         root_dir = os.path.abspath(os.path.dirname(sys.argv[0]))
         git_dir = os.path.join(root_dir, '.git')
         if os.path.exists(git_dir):
@@ -33,17 +33,18 @@ def _get_version():
                 return open(os.path.join(git_dir, *path)).read().strip()[:7]
             else:
                 return head[:7]
-        
+
         dir_name = os.path.split(root_dir)[1]
         match = re.match('p2pool-([.0-9]+)', dir_name)
         if match:
             return match.groups()[0]
-        
+
         return 'unknown %s' % (dir_name.encode('hex'),)
-    except Exception, e:
+    except Exception as e:
         traceback.print_exc()
         return 'unknown %s' % (str(e).encode('hex'),)
 
 __version__ = _get_version()
 
 DEBUG = True
+BENCH = False

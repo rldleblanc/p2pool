@@ -18,9 +18,9 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from math import convertbits
+from p2pool.util.math import convertbits
 
-CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+CHARSET = b"qpzry9x8gf2tvdw0s3jn54khce6mua7l"
 
 # Cashaddr format
 #
@@ -73,7 +73,14 @@ CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
 # the hash manually verified to find the error.
 
 def polymod(values):
-    """Internal function that computes the cashaddr checksum."""
+    """Internal function that computes the cashaddr checksum.
+
+    Args:
+        values: The data as a list of integers to compute checksum over.
+
+    Returns:
+        the checksum value as an int.
+    """
     generator = [0x98f2bc8e61, 0x79b76d99e2, 0xf33e5fb3c4, 0xae2eabe2a8, 0x1e4f43e470]
     chk = 1
     for value in values:
@@ -84,28 +91,64 @@ def polymod(values):
     return chk ^ 1
 
 def expand_prefix(prefix):
-    """Expand the address prefix into values for checksum computation."""
-    data = [ord(x) & 31 for x in prefix] + [0]
-    return [ord(x) & 31 for x in prefix] + [0]
+    """Expand the address prefix into values for checksum computation.
+
+    Args:
+        prefix: The human readable part in bytes().
+
+    Returns:
+        A list of integer values.
+    """
+    return [x & 31 for x in prefix] + [0]
 
 def verify_checksum(prefix, data):
-    """Verify a checksum given prefix and converted data characters."""
+    """Verify a checksum given prefix and converted data characters.
+
+    Args:
+        prefix: The human readable part in bytes().
+        data: The data as a list of integers.
+
+    Returns:
+        True if valid, False if invalid.
+    """
     return polymod(expand_prefix(prefix) + data) == 0
 
 def create_checksum(prefix, data):
-    """Compute the checksum values given prefix and data."""
+    """Compute the checksum values given prefix and data.
+
+    Args:
+        prefix: The human readable part as bytes().
+        data: The address data as a list of integers.
+
+    Returns:
+        The checksum as a list of integers.
+    """
     values = expand_prefix(prefix) + data
     out = polymod(values + [0, 0, 0, 0, 0, 0, 0, 0])
     return [(out >> 5 * (7 - i)) & 31 for i in range(8)]
 
 def assemble(prefix, data):
-    """Compute a cashaddr string given prefix and data values."""
+    """Compute a cashaddr string given prefix and data values.
+
+    Args:
+        prefix: The human readable part in bytes().
+        data: The data as a list of integers.
+
+    Returns:
+        A cashaddr address in bytes().
+    """
     combined = data + create_checksum(prefix, data)
-    return prefix + ':' + ''.join([CHARSET[d] for d in combined])
+    return prefix + b':' + bytes([CHARSET[d] for d in combined])
 
 def valid_version(data):
     """Check that the version is correct for the data.
-        Do not include the checksum."""
+
+    Args:
+        data: The payload data as a list of integers without the checksum.
+
+    Returns:
+        True if the version is valid and matches the length, False otherwise.
+    """
     converted = convertbits(data, 5, 8, False)
     if converted == None:
         return False
@@ -123,14 +166,22 @@ def valid_version(data):
     return True
 
 def disassemble(cashaddr, default_prefix):
-    """Validate a cashaddr string, and determine prefix and data."""
-    if ((any(ord(x) < 33 or ord(x) > 126 for x in cashaddr)) or
+    """Validate a cashaddr string, and determine prefix and data.
+
+    Args:
+        cashaddr: The cashaddr address as bytes().
+        default_prefix: The default human readable part as bytes().
+
+    Returns:
+        Tuple with the human readable part and the data as an int.
+    """
+    if ((any(x < 33 or x > 126 for x in cashaddr)) or
             (cashaddr.lower() != cashaddr and cashaddr.upper() != cashaddr)):
         return (None, None)
     cashaddr = cashaddr.lower()
-    pos = cashaddr.rfind(':')
+    pos = cashaddr.rfind(b':')
     if pos < 0:
-        cashaddr = "%s:%s" % (default_prefix.lower(), cashaddr)
+        cashaddr = b"%s:%s" % (default_prefix.lower(), cashaddr)
         pos = len(default_prefix)
     if len(cashaddr) - pos - 1 <= 8 or len(cashaddr) - pos - 1 > 112:
         return (None, None)
@@ -145,7 +196,15 @@ def disassemble(cashaddr, default_prefix):
     return (prefix, data[:-8])
 
 def decode(prefix, addr):
-    """Decode a cashaddr address."""
+    """Decode a cashaddr address.
+
+    Args:
+        prefix: The human readable part as bytes().
+        addr: The cashaddr as bytes().
+
+    Returns:
+        A tuple of version and the payload data as a list of integers.
+    """
     prefixgot, data = disassemble(addr, prefix)
     if prefixgot != prefix:
         return (None, None)
@@ -156,7 +215,16 @@ def decode(prefix, addr):
     return (ver, decoded[1:])
 
 def encode(prefix, ver, data):
-    """Encode a cashaddr address."""
+    """Encode a cashaddr address.
+
+    Args:
+        prefix: The human readable part as bytes().
+        ver: An integer representing the cashaddr version.
+        data: The cashaddr data as a list of integers.
+
+    Returns:
+        A cashaddr address as bytes().
+    """
     if not len(data) in [20, 24, 28, 32, 40, 48, 56, 64]:
         # Make sure length is valid.
         return None
@@ -168,8 +236,8 @@ def encode(prefix, ver, data):
     tmp = len(data) * 8
     if tmp > 256:
         dlen ^= 0x04
-        tmp /= 2
-    dlen += (tmp - 160) / 32
+        tmp //= 2
+    dlen += (tmp - 160) // 32
     ver += dlen
     bits = convertbits([ver] + data, 8, 5)
     ret = assemble(prefix, bits)
