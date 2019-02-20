@@ -1,1 +1,0 @@
-find p2pool/ -not -path 'p2pool/test/*' -path '*.py' | xargs wc | sort -n

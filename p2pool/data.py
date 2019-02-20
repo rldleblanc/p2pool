@@ -1139,7 +1139,10 @@ def get_pool_attempts_per_second(tracker, previous_share_hash, dist,
 def get_average_stale_prop(tracker, share_hash, lookbehind):
     stales = sum(1 for share in tracker.get_chain(share_hash, lookbehind) if
             share.share_data['stale_info'] is not None)
-    return stales/(lookbehind + stales)
+    try:
+        return stales/(lookbehind + stales)
+    except ZeroDivisionError:
+        return 0
 
 def get_stale_counts(tracker, share_hash, lookbehind, rates=False):
     res = {}
@@ -1202,16 +1205,17 @@ def get_warnings(tracker, best_share, net, bitcoind_getinfo, bitcoind_work_value
     desired_version_counts = get_desired_version_counts(tracker, best_share,
         min(net.CHAIN_LENGTH, 60*60//net.SHARE_PERIOD,
             tracker.get_height(best_share)))
-    majority_desired_version = max(desired_version_counts,
-            key=lambda k: desired_version_counts[k])
-    if majority_desired_version not in share_versions \
-            and desired_version_counts[majority_desired_version] \
-            > sum(desired_version_counts.values()) / 2:
-        res.append('A MAJORITY OF SHARES CONTAIN A VOTE FOR AN UNSUPPORTED SHARE IMPLEMENTATION! (v%i with %i%% support)\n'
-            'An upgrade is likely necessary. Check https://github.com/jtoomim/p2pool/tree/1mb_segwit or https://forum.bitcoin.com/pools/p2pool-decentralized-dos-resistant-trustless-censorship-resistant-pool-t69932-99999.html for more information.' % (
-                majority_desired_version, 100 * desired_version_counts[
-                    majority_desired_version] / sum(
-                        desired_version_counts.values())))
+    if desired_version_counts:
+        majority_desired_version = max(desired_version_counts,
+                key=lambda k: desired_version_counts[k])
+        if majority_desired_version not in share_versions \
+                and desired_version_counts[majority_desired_version] \
+                > sum(desired_version_counts.values()) / 2:
+            res.append('A MAJORITY OF SHARES CONTAIN A VOTE FOR AN UNSUPPORTED SHARE IMPLEMENTATION! (v%i with %i%% support)\n'
+                'An upgrade is likely necessary. Check https://github.com/jtoomim/p2pool/tree/1mb_segwit or https://forum.bitcoin.com/pools/p2pool-decentralized-dos-resistant-trustless-censorship-resistant-pool-t69932-99999.html for more information.' % (
+                    majority_desired_version, 100 * desired_version_counts[
+                        majority_desired_version] / sum(
+                            desired_version_counts.values())))
 
     if bitcoind_getinfo['warnings'] != '':
         if 'This is a pre-release test build' not in bitcoind_getinfo['warnings']:

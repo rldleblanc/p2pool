@@ -80,7 +80,7 @@ gnode = None # for debugging via rconsole/rfoo only
 @defer.inlineCallbacks
 def main(args, net, datadir_path, merged_urls, worker_endpoint):
     try:
-        print('p2pool (version %s)' % p2pool.__version__.decode('ascii'))
+        print('p2pool (version %s)' % p2pool.__version__)
         print()
 
         @defer.inlineCallbacks
@@ -531,9 +531,9 @@ def run():
             if '_testnet' not in name)
 
     parser = fixargparse.FixedArgumentParser(description='p2pool (version %s)' %
-        p2pool.__version__.decode('ascii'), fromfile_prefix_chars='@')
+        p2pool.__version__, fromfile_prefix_chars='@')
     parser.add_argument('--version', action='version',
-            version=p2pool.__version__.decode('ascii'))
+            version=p2pool.__version__)
     parser.add_argument('--net',
         help='use specified network (default: bitcoin)',
         action='store', choices=sorted(realnets), default='bitcoin', dest='net_name')

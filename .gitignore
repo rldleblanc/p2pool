@@ -1,9 +1,10 @@
 *.pyc
 *.pyo
 *~
+.*.swp
+*.so
 
 /data/
-/litecoin_scrypt/build/
 /_trial_temp*
 Makefile.local
 .cache/
@@ -11,4 +12,8 @@ Makefile.local
 .pyenv/
 .coverage
 build/
-ltc_scrypt.so
+MANIFEST
+VERSION
+dist/
+tags
+*.egg-info

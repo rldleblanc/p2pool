@@ -130,31 +130,34 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var,
 
     def get_global_stats():
         # averaged over last hour
-        if node.tracker.get_height(node.best_share_var.value) < 10:
-            return None
         lookbehind = min(node.tracker.get_height(node.best_share_var.value),
                          3600//node.net.SHARE_PERIOD)
 
-        nonstale_hash_rate = p2pool_data.get_pool_attempts_per_second(
-                node.tracker, node.best_share_var.value, lookbehind)
+        if lookbehind > 1:
+            nonstale_hash_rate = p2pool_data.get_pool_attempts_per_second(
+                    node.tracker, node.best_share_var.value, lookbehind)
+        else:
+            nonstale_hash_rate = 0
         stale_prop = p2pool_data.get_average_stale_prop(
                 node.tracker, node.best_share_var.value, lookbehind)
         diff = bitcoin_data.target_to_difficulty(
                 wb.current_work.value['bits'].target)
+        try:
+            target2diff = bitcoin_data.target_to_difficulty(
+                node.tracker.items[node.best_share_var.value].max_target)
+        except KeyError:
+            target2diff = 0
 
         return dict(
             pool_nonstale_hash_rate=nonstale_hash_rate,
             pool_hash_rate=nonstale_hash_rate/(1 - stale_prop),
             pool_stale_prop=stale_prop,
-            min_difficulty=bitcoin_data.target_to_difficulty(
-                node.tracker.items[node.best_share_var.value].max_target),
+            min_difficulty=target2diff,
             network_block_difficulty=diff,
             network_hashrate=(diff * 2**32 // node.net.PARENT.BLOCK_PERIOD),
         )
 
     def get_local_stats():
-        if node.tracker.get_height(node.best_share_var.value) < 10:
-            return None
         lookbehind = min(node.tracker.get_height(node.best_share_var.value),
                 3600 // node.net.SHARE_PERIOD)
 
@@ -182,13 +185,23 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var,
             for share in node.tracker.get_chain(
                 node.best_share_var.value, lookbehind - 1)
             if share.hash in wb.my_share_hashes)
-        actual_time = (node.tracker.items[node.best_share_var.value].timestamp -
-            node.tracker.items[node.tracker.get_nth_parent_hash(
-                node.best_share_var.value, lookbehind - 1)].timestamp)
-        share_att_s = my_work / actual_time
+        try:
+            actual_time = (node.tracker.items[node.best_share_var.value].timestamp -
+                node.tracker.items[node.tracker.get_nth_parent_hash(
+                    node.best_share_var.value, lookbehind - 1)].timestamp)
+            share_att_s = my_work / actual_time
+        except (KeyError, ZeroDivisionError):
+            actual_time = 0
+            share_att_s = 0
 
         miner_hash_rates, miner_dead_hash_rates = wb.get_local_rates()
         (stale_orphan_shares, stale_doa_shares), shares, _ = wb.get_stale_counts()
+
+        try:
+            att2share = bitcoin_data.target_to_average_attempts(
+                node.tracker.items[node.best_share_var.value].max_target)
+        except KeyError:
+            att2share = 0
 
         miner_last_difficulties = {}
         for addr in wb.last_work_shares.value:
@@ -240,8 +253,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var,
                 dead=stale_doa_shares,
             ),
             uptime=time.time() - start_time,
-            attempts_to_share=bitcoin_data.target_to_average_attempts(
-                node.tracker.items[node.best_share_var.value].max_target),
+            attempts_to_share=att2share,
             attempts_to_block=bitcoin_data.target_to_average_attempts(
                 node.bitcoind_work.value['bits'].target),
             block_value=node.bitcoind_work.value['subsidy']*1e-8,
@@ -249,7 +261,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var,
                 node.tracker, node.best_share_var.value, node.net,
                 bitcoind_getinfo_var.value, node.bitcoind_work.value),
             donation_proportion=wb.donation_percentage/100,
-            version=p2pool.__version__.decode('ascii'),
+            version=p2pool.__version__,
             protocol_version=p2p.Protocol.VERSION,
             fee=wb.worker_fee,
         )
@@ -496,7 +508,8 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var,
         lambda: ['%064x' % x for t in node.tracker.verified.tails for \
                 x in node.tracker.verified.reverse.get(t, set())]))
     new_root.putChild(b'best_share_hash', WebInterface(
-        lambda: '%064x' % node.best_share_var.value))
+        lambda: '%064x' % node.best_share_var.value if node.best_share_var.value
+                    else None))
     new_root.putChild(b'my_share_hashes', WebInterface(
         lambda: ['%064x' % my_share_hash for \
                 my_share_hash in wb.my_share_hashes]))
@@ -522,7 +535,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var,
         tx_explorer_url_prefix=node.net.PARENT.TX_EXPLORER_URL_PREFIX,
     )))
     new_root.putChild(b'version', WebInterface(
-        lambda: p2pool.__version__.decode('ascii')))
+        lambda: p2pool.__version__))
 
     hd_path = os.path.join(datadir_path, 'graph_db')
     hd_data = _atomic_read(hd_path)
@@ -676,9 +689,12 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var,
 
     new_root.putChild(b'graph_data', WebInterface(get_graph_data))
 
+    orig_dir = '%s/web-static' % os.path.dirname(os.path.dirname(
+        __loader__.path))
     if static_dir is None:
-        static_dir = os.path.join(os.path.dirname(
-            os.path.abspath(sys.argv[0])), 'web-static')
+        static_dir = orig_dir
+    else:
+        web_root.putChild(b'orig', static.File(orig_dir))
     web_root.putChild(b'static', static.File(static_dir))
 
     return web_root

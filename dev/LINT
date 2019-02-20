@@ -1,1 +1,0 @@
-pylint p2pool/ -E | grep -v reactor | grep -v hashlib | grep -v 'Yield outside function' | grep -v 'function already defined'
