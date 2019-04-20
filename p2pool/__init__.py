@@ -29,15 +29,26 @@ def _get_version():
                 ).strip().decode('ascii')
     except:
         pass
+
+    cur_ver = None
     ver_file = '%s/VERSION' % os.path.dirname(os.path.dirname(dir_name))
-    with open(ver_file, 'a+', encoding='UTF-8') as fh:
-        fh.seek(0)
-        cur_ver = fh.read().strip()
-        if ret is not None and cur_ver != ret:
-            fh.seek(0)
-            fh.write(ret)
-            return ret
-        return cur_ver
+    try:
+        with open(ver_file, 'r', encoding='UTF-8') as fh:
+            cur_ver = fh.read().strip()
+    except FileNotFoundError:
+        pass
+
+    if ret is not None and cur_ver != ret:
+        try:
+            with open(ver_file, 'w+', encoding='UTF-8') as fh:
+                fh.write(ret)
+        except PermissionError as err:
+            print(err)
+            pass
+        finally:
+            cur_ver = ret
+
+    return cur_ver
 
 __version__ = _get_version()
 
