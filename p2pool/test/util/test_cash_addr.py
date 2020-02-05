@@ -313,6 +313,7 @@ class IntegrationTest(unittest.TestCase):
     ]
 
     VALID_ADDRESS = [
+         ['bitcoincash:qqqxkp0kxgul03wats0ke54qp3xrtq63kudgp05fkn', '006B05F63239F7C5DD5C1F6CD2A00C4C358351B7'],
 	 ['bitcoincash:qr6m7j9njldwwzlg9v7v53unlr4jkmx6eylep8ekg2', 'F5BF48B397DAE70BE82B3CCA4793F8EB2B6CDAC9'],
 	 ['bchtest:pr6m7j9njldwwzlg9v7v53unlr4jkmx6eyvwc0uz5t', 'F5BF48B397DAE70BE82B3CCA4793F8EB2B6CDAC9'],
 	 ['pref:pr6m7j9njldwwzlg9v7v53unlr4jkmx6ey65nvtks5', 'F5BF48B397DAE70BE82B3CCA4793F8EB2B6CDAC9'],

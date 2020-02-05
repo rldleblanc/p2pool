@@ -290,7 +290,7 @@ class UnitTests(unittest.TestCase):
         mse.assert_called_once_with('bc', 0, ret1)
         mse.reset_mock()
         hash2 = 4328719365
-        ret2 = [1, 2, 3, 4, 5]
+        ret2 = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5]
         self.assertEqual('moobar',
                          data.pubkey_hash_to_address(hash2, -1, 1, self.ltcnet))
         mse.assert_called_once_with('ltc', 1, ret2)
@@ -3570,6 +3570,7 @@ class IntegrationTests(unittest.TestCase):
                  'bitcoincash:pqkh9ahfj069qv8l6eysyufazpe4fdjq3u4hna323j',
                  '1D573bqaDiGvMxMRXWoJ6G8yhz9sLs9Z82',
                  'bitcoincash:qzzxswqlwze7c0gj8mwel8l4q3wqk0krlu7jch88gv',
+                 'bitcoincash:qqqxkp0kxgul03wats0ke54qp3xrtq63kudgp05fkn',
                 ]
 
     bch_addrs2 = [
